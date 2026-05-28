@@ -17,6 +17,7 @@ const defaultState = {
     hideLearned: false,
     phoneticFirst: false,
     showEnPhonetic: true, // show Spanish-readable English pronunciation under English
+    viewerReads: 'both',  // 'en' = native English (hide en-ph), 'es' = native Spanish (hide es-ph), 'both' = show both
     direction: 'en-es',   // 'en-es' = English prompt, Spanish answer · 'es-en' = reversed
   },
 };
@@ -493,9 +494,16 @@ function renderPhraseCard(p) {
   const isLearned = !!state.learned[id];
   const phonFirst = state.settings.phoneticFirst;
   const esFirst = state.settings.direction === 'es-en';
-  const showEnPh = state.settings.showEnPhonetic !== false;
+  // Phonetic visibility — depends on viewer's native language
+  // - 'en' reader natively reads English → needs Spanish phonetics, doesn't need English phonetics
+  // - 'es' reader natively reads Spanish → needs English phonetics, doesn't need Spanish phonetics
+  // - 'both' shows both lines (default — for mixed household or learners of both)
+  const viewer = state.settings.viewerReads || 'both';
+  const showEsPh = viewer !== 'es';
+  const showEnPh = state.settings.showEnPhonetic !== false && viewer !== 'en';
   const enPh = showEnPh ? enPhonetic(p.en) : '';
   const enPhHtml = enPh ? `<div class="ph en-ph">${enPh}</div>` : '';
+  const esPhHtml = showEsPh ? `<div class="ph">${p.ph}</div>` : '';
   const noteHtml = p.note ? `<div class="note">${p.note}</div>` : '';
   const hasVoice = !!voiceBankIndex[id];
 
@@ -505,15 +513,16 @@ function renderPhraseCard(p) {
     // Spanish-first: large Spanish on top, phonetic, English smaller below + en-phonetic for ES speakers
     body = `
       <div class="es">${p.es}</div>
-      <div class="ph">${p.ph}</div>
+      ${esPhHtml}
       <div class="en" style="margin-top:8px">${p.en}</div>
       ${enPhHtml}
     `;
   } else if (phonFirst) {
+    const esPhBig = showEsPh ? `<div class="ph" style="font-size:1.3rem;margin-bottom:8px">${p.ph}</div>` : '';
     body = `
       <div class="en">${p.en}</div>
       ${enPhHtml}
-      <div class="ph" style="font-size:1.3rem;margin-bottom:8px">${p.ph}</div>
+      ${esPhBig}
       <div class="es" style="font-size:1.15rem;color:var(--mu)">${p.es}</div>
     `;
   } else {
@@ -521,7 +530,7 @@ function renderPhraseCard(p) {
       <div class="en">${p.en}</div>
       ${enPhHtml}
       <div class="es">${p.es}</div>
-      <div class="ph">${p.ph}</div>
+      ${esPhHtml}
     `;
   }
 
@@ -825,6 +834,20 @@ function bindSettings() {
       refreshCurrentView();
     });
   }
+  // Viewer-language chips (who's reading the cards?)
+  const vrGroup = el('viewer-reads-group');
+  if (vrGroup) {
+    const current = state.settings.viewerReads || 'both';
+    vrGroup.querySelectorAll('.vr-chip').forEach((chip) => {
+      if (chip.dataset.vr === current) chip.classList.add('on');
+      chip.addEventListener('click', () => {
+        state.settings.viewerReads = chip.dataset.vr;
+        vrGroup.querySelectorAll('.vr-chip').forEach((c) => c.classList.toggle('on', c === chip));
+        saveState();
+        refreshCurrentView();
+      });
+    });
+  }
   el('reset-btn').addEventListener('click', () => {
     if (!confirm('Reset everything? This clears favorites, learned status, streak, and your name.')) return;
     state = JSON.parse(JSON.stringify(defaultState));
@@ -1039,10 +1062,13 @@ function showPracticeCard() {
     el('practice-back-ph').textContent = p.ph;
     el('practice-back-en').textContent = p.en;
   }
-  // English phonetic for whoever needs to read English aloud
+  // Phonetic visibility on practice back, by viewer language
+  const viewer = state.settings.viewerReads || 'both';
+  const esPhEl = el('practice-back-ph');
+  if (esPhEl) esPhEl.style.display = (viewer === 'es') ? 'none' : '';
   const enphEl = el('practice-back-enph');
   if (enphEl) {
-    const enPh = state.settings.showEnPhonetic !== false ? enPhonetic(p.en) : '';
+    const enPh = (state.settings.showEnPhonetic !== false && viewer !== 'en') ? enPhonetic(p.en) : '';
     enphEl.textContent = enPh;
     enphEl.style.display = enPh ? '' : 'none';
   }

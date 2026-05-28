@@ -1,5 +1,5 @@
 // Cotidiano service worker — offline-first
-const CACHE = 'cotidiano-v14';
+const CACHE = 'cotidiano-v15';
 const ASSETS = [
   './',
   './index.html',

@@ -199,8 +199,26 @@ header.top {
   font-size: 1rem; color: var(--ac); font-weight: 600;
   letter-spacing: 0.01em; margin-bottom: 14px;
 }
-/* English phonetic — for Spanish speakers reading English aloud */
-.phrase .ph.en-ph {
+/* Viewer-language chips in settings */
+.vr-chip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--rl);
+  background: var(--cd);
+  color: var(--mu);
+  font-family: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.vr-chip:hover { color: var(--tx); border-color: var(--ac); }
+.vr-chip.on {
+  background: var(--ac);
+  color: #fff;
+  border-color: var(--ac);
+}
+
+.en-ph {
   font-size: 0.85rem;
   color: var(--mu);
   font-weight: 500;
