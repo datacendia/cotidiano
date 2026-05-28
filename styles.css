@@ -298,6 +298,143 @@ header.top {
 }
 .coach-phon-meta strong { color: var(--ac); }
 
+/* ── Voice Studio ─────────────────────────────────────────── */
+.vs-sheet {
+  max-height: 92vh;
+  display: flex; flex-direction: column;
+}
+.vs-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 4px;
+}
+.vs-close-x {
+  background: transparent; border: none; color: var(--mu);
+  font-size: 1.8rem; line-height: 1; cursor: pointer; padding: 4px 10px;
+}
+.vs-close-x:hover { color: var(--tx); }
+.vs-sub { color: var(--mu); font-size: 0.9rem; margin: 0 0 14px; }
+
+.vs-speakers {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.vs-speaker {
+  padding: 8px 14px; border-radius: 999px;
+  border: 1px solid var(--rl); background: var(--cd);
+  color: var(--mu); font-family: inherit; font-size: 0.9rem;
+  cursor: pointer; transition: all 0.15s;
+}
+.vs-speaker:hover { color: var(--tx); border-color: var(--ac); }
+.vs-speaker.active {
+  background: var(--ac); color: #fff; border-color: var(--ac);
+}
+
+.vs-progress {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
+}
+.vs-progress-bar-wrap {
+  flex: 1; height: 6px; background: var(--rl); border-radius: 999px;
+  overflow: hidden;
+}
+.vs-progress-bar {
+  height: 100%; background: var(--ac); border-radius: 999px;
+  transition: width 0.3s ease;
+}
+.vs-progress-text {
+  font-size: 0.8rem; color: var(--mu); font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.vs-card {
+  background: var(--cd); border: 1px solid var(--rl);
+  border-radius: 14px; padding: 18px 18px 14px;
+  margin-bottom: 10px;
+  min-height: 160px;
+}
+.vs-section-tag {
+  font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--mu); font-weight: 600; margin-bottom: 8px;
+}
+.vs-es {
+  font-family: Georgia, 'Iowan Old Style', serif;
+  font-size: 1.5rem; font-weight: 700; color: var(--ink);
+  line-height: 1.25; margin-bottom: 4px;
+}
+.vs-ph {
+  font-family: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+  font-size: 0.95rem; color: var(--ac); font-weight: 600;
+  margin-bottom: 8px;
+}
+.vs-en { font-size: 0.95rem; color: var(--mu); margin-bottom: 8px; }
+.vs-note {
+  font-size: 0.8rem; color: var(--mu); font-style: italic;
+  padding: 6px 10px; background: var(--bg);
+  border-radius: 8px; margin-bottom: 8px;
+}
+.vs-listen {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: transparent; border: 1px solid var(--rl);
+  color: var(--ac); padding: 6px 12px; border-radius: 999px;
+  font-family: inherit; font-size: 0.85rem; cursor: pointer;
+  font-weight: 600;
+}
+.vs-listen:hover { background: var(--bg); }
+
+.vs-status {
+  font-size: 0.85rem; color: var(--mu); text-align: center;
+  margin: 6px 0 12px;
+}
+
+.vs-controls {
+  display: flex; gap: 12px; align-items: stretch; margin-bottom: 14px;
+}
+.vs-skip-btn { flex: 0 0 auto; }
+.vs-record-btn {
+  flex: 1;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 16px 20px; border-radius: 14px;
+  background: var(--ac); color: #fff; border: none;
+  font-family: inherit; font-size: 1.05rem; font-weight: 700;
+  cursor: pointer; transition: background 0.15s;
+}
+.vs-record-btn:hover { background: color-mix(in srgb, var(--ac) 85%, #000); }
+.vs-record-btn.recording {
+  background: #c62828;
+  animation: vs-pulse 1.2s ease-in-out infinite;
+}
+.vs-rec-dot {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: #fff;
+}
+.vs-record-btn.recording .vs-rec-dot {
+  animation: vs-blink 0.8s ease-in-out infinite;
+}
+@keyframes vs-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(198, 40, 40, 0.4); }
+  50%      { box-shadow: 0 0 0 8px rgba(198, 40, 40, 0); }
+}
+@keyframes vs-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.3; }
+}
+
+.vs-playback {
+  background: var(--cd); border: 1px solid var(--rl);
+  border-radius: 12px; padding: 12px;
+}
+.vs-pb-buttons {
+  display: flex; gap: 8px; margin-top: 10px;
+}
+.vs-pb-buttons .act { flex: 1; justify-content: center; }
+
+.vs-empty {
+  text-align: center; padding: 30px 20px;
+}
+.vs-empty h3 {
+  font-family: Georgia, serif; margin-bottom: 8px; color: var(--ink);
+}
+.vs-empty p { color: var(--mu); font-size: 0.9rem; line-height: 1.5; }
+
 /* Viewer-language chips in settings */
 .vr-chip {
   padding: 6px 12px;

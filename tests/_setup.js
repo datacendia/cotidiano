@@ -105,6 +105,12 @@ function loadCotidiano({ withEnDict = true } = {}) {
   __EN_OVERRIDES: typeof EN_OVERRIDES !== 'undefined' ? EN_OVERRIDES : null,
   __REGISTER_VARIANTS: typeof window !== 'undefined' && window.REGISTER_VARIANTS ? window.REGISTER_VARIANTS : null,
   __EN_DICT: typeof window !== 'undefined' && window.EN_DICT ? window.EN_DICT : null,
+  __buildVoiceStudioPlaylist: typeof buildVoiceStudioPlaylist !== 'undefined' ? buildVoiceStudioPlaylist : null,
+  __VS_SECTION_WEIGHTS: typeof VS_SECTION_WEIGHTS !== 'undefined' ? VS_SECTION_WEIGHTS : null,
+  // Mutable refs so tests can poke state for collaboration scenarios
+  __getState: () => (typeof state !== 'undefined' ? state : null),
+  __getVoiceBankIndex: () => (typeof voiceBankIndex !== 'undefined' ? voiceBankIndex : null),
+  __setVoiceBankIndex: (v) => { if (typeof voiceBankIndex !== 'undefined') Object.keys(voiceBankIndex).forEach(k => delete voiceBankIndex[k]); Object.assign(voiceBankIndex, v); },
 });
 `;
 

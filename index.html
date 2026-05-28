@@ -440,6 +440,48 @@
   <button class="act" id="coach-close" style="width:100%;margin-top:18px;justify-content:center">Close</button>
 </div>
 
+<!-- Voice Studio (guided recording session) -->
+<div class="backdrop" id="vs-backdrop"></div>
+<div class="sheet vs-sheet" id="vs-sheet">
+  <div class="sheet-handle"></div>
+  <div class="vs-head">
+    <h2 style="margin:0">Voice Studio</h2>
+    <button class="vs-close-x" id="vs-close" aria-label="Close">×</button>
+  </div>
+  <p class="vs-sub">Sit down with the family. Pick who's recording, then walk through the phrases.</p>
+
+  <div class="vs-speakers" id="vs-speakers">
+    <button class="vs-speaker active" data-speaker="stephania" type="button">Stephania</button>
+    <button class="vs-speaker" data-speaker="joaquin" type="button">Joaquín</button>
+    <button class="vs-speaker" data-speaker="other" type="button">Other</button>
+  </div>
+
+  <div class="vs-progress">
+    <div class="vs-progress-bar-wrap"><div class="vs-progress-bar" id="vs-progress-bar"></div></div>
+    <div class="vs-progress-text" id="vs-progress-text">0 / 0</div>
+  </div>
+
+  <div class="vs-card" id="vs-card"></div>
+
+  <div class="vs-status" id="vs-status">Tap record, say it, tap stop.</div>
+
+  <div class="vs-controls">
+    <button class="act vs-skip-btn" id="vs-skip" type="button">Skip</button>
+    <button class="vs-record-btn" id="vs-record" type="button">
+      <span class="vs-rec-dot"></span>
+      <span class="vs-rec-lbl">Record</span>
+    </button>
+  </div>
+
+  <div class="vs-playback" id="vs-playback" style="display:none">
+    <audio id="vs-audio" controls style="width:100%"></audio>
+    <div class="vs-pb-buttons">
+      <button class="act" id="vs-redo" type="button">Redo</button>
+      <button class="act primary" id="vs-save-next" type="button">Save &amp; next →</button>
+    </div>
+  </div>
+</div>
+
 <!-- Family Voice Bank modal -->
 <div class="backdrop" id="vb-backdrop"></div>
 <div class="sheet vb-sheet" id="vb-sheet">
@@ -491,6 +533,16 @@
     </div>
     <input type="text" id="name-edit" maxlength="32" autocapitalize="words"
            style="padding:8px 12px;border-radius:10px;border:1px solid var(--rl);background:var(--cd);max-width:160px;font-family:inherit">
+  </div>
+
+  <div class="sheet-row" style="flex-direction:column;align-items:stretch">
+    <div style="margin-bottom:10px">
+      <div class="lbl">Voice Studio</div>
+      <div class="sub-lbl">Guided recording session for Stephania, Joaquín, family</div>
+    </div>
+    <button class="act primary" id="vs-open" type="button" style="justify-content:center">
+      🎙️ Start a recording session
+    </button>
   </div>
 
   <div class="sheet-row">

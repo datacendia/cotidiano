@@ -21,6 +21,10 @@ const defaultState = {
     direction: 'en-es',   // 'en-es' = English prompt, Spanish answer · 'es-en' = reversed
   },
   lastSection: null,    // { groupKey, sectionId, ts } — most recently opened section, for "continue where you left off"
+  voiceStudio: {        // Guided recording session state (per-speaker skip lists)
+    lastSpeaker: 'stephania',
+    skipped: {},        // { stephania: [phraseId,…], joaquin: […], other: […] }
+  },
 };
 
 let state = loadState();
@@ -69,7 +73,7 @@ function allPhrases() {
     const group = DATA[groupKey];
     for (const section of group.sections) {
       for (const p of section.phrases) {
-        out.push({ ...p, _section: section.title, _group: groupKey, _id: phraseId(p) });
+        out.push({ ...p, _section: section.title, _sectionId: section.id, _group: groupKey, _id: phraseId(p) });
       }
     }
   }
@@ -2480,6 +2484,299 @@ function bindVoiceBank() {
 }
 
 // ════════════════════════════════════════════════════════════
+//  FEATURE 4¼ — VOICE STUDIO (guided recording session)
+// ════════════════════════════════════════════════════════════
+//
+// Wraps the voice bank with a guided playlist so a non-technical user
+// (Stephania, Joaquín, abuela) can sit down, pick their name, and walk
+// through a curated set of high-value phrases one at a time without
+// hunting through the app. ~150 phrases prioritised by emotional value.
+
+// Speaker-specific section weights. Higher = surfaced earlier in the playlist.
+// Sections not listed are still included at default weight 1.
+const VS_SECTION_WEIGHTS = {
+  stephania: {
+    'family/stephania-deep': 100,    // Couple talk — highest emotional value
+    'daily/wife':            95,     // Wife-specific everyday lines
+    'daily/bedroom':         90,     // Intimate moments
+    'daily/waking':          80,     // Morning together
+    'daily/breakfast':       70,
+    'daily/dinner':          70,
+    'parenting/toddler':     65,     // Emiliano
+    'parenting/bedtime-routine': 60,
+    'parenting/sick-kids':   55,
+    'kids/emiliano-spanish': 55,
+    'kids/emiliano-english': 50,
+    'family/birthdays-wishes': 50,
+    'daily/kids-morning':    45,
+    'daily/family-time':     45,
+  },
+  joaquin: {
+    'parenting/teen':        100,    // Teen-directed phrases
+    'kids/joaquin-school':   90,
+    'kids/joaquin-future':   85,
+    'daily/breakfast':       70,
+    'daily/dinner':          70,
+    'daily/family-time':     65,
+    'daily/waking':          60,
+    'parenting/discipline':  40,
+  },
+  other: {
+    // Suegros / abuelos / extended family — formal greetings + daily life
+    'family/suegros-formal': 100,
+    'family/in-laws-parents': 90,
+    'family/abuelos-elders': 85,
+    'family/in-laws-siblings': 80,
+    'family/carmen-family':  70,
+    'family/birthdays-wishes': 65,
+    'daily/dinner':          50,
+    'daily/family-time':     45,
+  },
+};
+
+// Build a prioritised list of phrases for the given speaker, excluding any
+// already recorded by them or marked skipped.
+// Pure function — easy to test.
+function buildVoiceStudioPlaylist(speaker, opts = {}) {
+  const limit = opts.limit || 150;
+  const all = (typeof allPhrases === 'function') ? allPhrases() : [];
+  const weights = VS_SECTION_WEIGHTS[speaker] || VS_SECTION_WEIGHTS.other;
+  // Pull skip list from state (or empty if not initialised)
+  const studioState = (state && state.voiceStudio) || {};
+  const skipped = new Set((studioState.skipped && studioState.skipped[speaker]) || []);
+  // Existing recordings for THIS speaker — skip them
+  const recordedByThisSpeaker = new Set();
+  for (const [pid, info] of Object.entries(voiceBankIndex || {})) {
+    if (info && info.speaker === speaker) recordedByThisSpeaker.add(pid);
+  }
+
+  const scored = [];
+  for (const p of all) {
+    const pid = phraseId(p);
+    if (skipped.has(pid)) continue;
+    if (recordedByThisSpeaker.has(pid)) continue;
+    // Skip the empty 'custom/mine' section — user-created phrases at runtime
+    if (p._group === 'custom') continue;
+    const sectionKey = `${p._group}/${p._sectionId || ''}`;
+    // Try matching by section title since data.js sections use id, not _sectionId
+    let weight = weights[sectionKey] != null ? weights[sectionKey] : 1;
+    if (weight === 1) {
+      // Try just the group key (broad fallback)
+      weight = weights[p._group] != null ? weights[p._group] : weight;
+    }
+    scored.push({ phrase: p, weight, pid });
+  }
+  scored.sort((a, b) => b.weight - a.weight);
+  return scored.slice(0, limit).map((x) => x.phrase);
+}
+
+// Voice Studio runtime state
+let vsPlaylist = [];
+let vsIdx = 0;
+let vsSpeaker = 'stephania';
+let vsRecorder = null;
+let vsChunks = [];
+let vsBlobUrl = null;
+let vsRecording = false;
+
+function openVoiceStudio() {
+  vsSpeaker = (state.voiceStudio && state.voiceStudio.lastSpeaker) || 'stephania';
+  vsPlaylist = buildVoiceStudioPlaylist(vsSpeaker);
+  vsIdx = 0;
+  // Sync speaker chip UI
+  document.querySelectorAll('.vs-speaker').forEach((b) => {
+    b.classList.toggle('active', b.dataset.speaker === vsSpeaker);
+  });
+  el('vs-backdrop').classList.add('open');
+  el('vs-sheet').classList.add('open');
+  vsRenderCard();
+}
+
+function closeVoiceStudio() {
+  vsCancelRecording();
+  if (vsBlobUrl) { URL.revokeObjectURL(vsBlobUrl); vsBlobUrl = null; }
+  el('vs-backdrop').classList.remove('open');
+  el('vs-sheet').classList.remove('open');
+  // Refresh the current view in case voices were saved
+  const activeTab = document.querySelector('.nav-item.active')?.dataset.tab || 'home';
+  setTab(activeTab);
+}
+
+function vsRenderCard() {
+  const total = vsPlaylist.length;
+  if (!total) {
+    el('vs-card').innerHTML = `
+      <div class="vs-empty">
+        <h3>All done</h3>
+        <p>${vsSpeaker === 'stephania' ? 'Stephania' : vsSpeaker === 'joaquin' ? 'Joaquín' : 'This speaker'} has recorded every priority phrase. Switch speaker or pick phrases manually from any card.</p>
+      </div>`;
+    el('vs-progress-text').textContent = '0 / 0';
+    el('vs-progress-bar').style.width = '0%';
+    el('vs-record').style.display = 'none';
+    el('vs-skip').style.display = 'none';
+    return;
+  }
+  if (vsIdx >= total) {
+    el('vs-card').innerHTML = `
+      <div class="vs-empty">
+        <h3>Session complete 🎉</h3>
+        <p>${total} phrases recorded in this session. Open the app and you'll hear them in your voice from now on.</p>
+      </div>`;
+    el('vs-progress-text').textContent = `${total} / ${total}`;
+    el('vs-progress-bar').style.width = '100%';
+    el('vs-record').style.display = 'none';
+    el('vs-skip').style.display = 'none';
+    return;
+  }
+  el('vs-record').style.display = '';
+  el('vs-skip').style.display = '';
+  const p = vsPlaylist[vsIdx];
+  const noteHtml = p.note ? `<div class="vs-note">${p.note}</div>` : '';
+  el('vs-card').innerHTML = `
+    <div class="vs-section-tag">${p._section || ''}</div>
+    <div class="vs-es">${p.es}</div>
+    <div class="vs-ph">${p.ph}</div>
+    <div class="vs-en">${p.en}</div>
+    ${noteHtml}
+    <button class="vs-listen" id="vs-listen-btn" type="button" aria-label="Listen to target">
+      ${ICONS.play}<span>Listen first</span>
+    </button>
+  `;
+  const listenBtn = el('vs-listen-btn');
+  if (listenBtn) listenBtn.addEventListener('click', () => speak(p.es, { btn: listenBtn }));
+  el('vs-progress-text').textContent = `${vsIdx + 1} / ${total}`;
+  el('vs-progress-bar').style.width = `${Math.round(((vsIdx) / total) * 100)}%`;
+  el('vs-playback').style.display = 'none';
+  el('vs-status').textContent = 'Tap record, say it, tap stop.';
+  el('vs-record').classList.remove('recording');
+  el('vs-record').querySelector('.vs-rec-lbl').textContent = 'Record';
+}
+
+async function vsToggleRecord() {
+  if (vsRecording) { vsStopRecord(); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    el('vs-status').textContent = 'Recording not supported on this browser.';
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    vsChunks = [];
+    vsRecorder = new MediaRecorder(stream);
+    vsRecorder.ondataavailable = (e) => { if (e.data.size > 0) vsChunks.push(e.data); };
+    vsRecorder.onstop = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      const blob = new Blob(vsChunks, { type: 'audio/webm' });
+      if (vsBlobUrl) URL.revokeObjectURL(vsBlobUrl);
+      vsBlobUrl = URL.createObjectURL(blob);
+      el('vs-audio').src = vsBlobUrl;
+      el('vs-playback').style.display = '';
+      el('vs-status').textContent = 'Listen back. Save & next, or redo.';
+      el('vs-record').classList.remove('recording');
+      el('vs-record').querySelector('.vs-rec-lbl').textContent = 'Record';
+      vsRecording = false;
+    };
+    vsRecorder.start();
+    vsRecording = true;
+    el('vs-record').classList.add('recording');
+    el('vs-record').querySelector('.vs-rec-lbl').textContent = 'Stop';
+    el('vs-status').textContent = 'Recording — say it now.';
+  } catch (err) {
+    el('vs-status').textContent = 'Microphone permission denied or unavailable.';
+  }
+}
+
+function vsStopRecord() {
+  if (vsRecorder && vsRecorder.state === 'recording') {
+    vsRecorder.stop();
+  }
+}
+
+function vsCancelRecording() {
+  if (vsRecorder && vsRecorder.state === 'recording') {
+    try { vsRecorder.stop(); } catch {}
+  }
+  vsRecording = false;
+  vsChunks = [];
+}
+
+async function vsSaveAndNext() {
+  if (!vsChunks.length) return;
+  const phrase = vsPlaylist[vsIdx];
+  const blob = new Blob(vsChunks, { type: 'audio/webm' });
+  const id = phraseId(phrase);
+  try {
+    if (!db) await openVoiceBankDB();
+    await saveVoiceBlob(id, vsSpeaker, blob);
+    voiceBankIndex[id] = { speaker: vsSpeaker, hasBlob: true };
+    el('vs-status').textContent = 'Saved.';
+    vsChunks = [];
+    vsIdx++;
+    setTimeout(vsRenderCard, 250);
+  } catch (e) {
+    el('vs-status').textContent = 'Save failed: ' + e;
+  }
+}
+
+function vsSkipCurrent() {
+  if (vsIdx >= vsPlaylist.length) return;
+  const phrase = vsPlaylist[vsIdx];
+  const pid = phraseId(phrase);
+  // Persist skip so this phrase doesn't show up next session for this speaker
+  if (!state.voiceStudio) state.voiceStudio = { skipped: {}, lastSpeaker: vsSpeaker };
+  if (!state.voiceStudio.skipped) state.voiceStudio.skipped = {};
+  if (!state.voiceStudio.skipped[vsSpeaker]) state.voiceStudio.skipped[vsSpeaker] = [];
+  if (!state.voiceStudio.skipped[vsSpeaker].includes(pid)) {
+    state.voiceStudio.skipped[vsSpeaker].push(pid);
+  }
+  saveState();
+  vsChunks = [];
+  vsIdx++;
+  vsRenderCard();
+}
+
+function vsSwitchSpeaker(speaker) {
+  vsSpeaker = speaker;
+  if (!state.voiceStudio) state.voiceStudio = { skipped: {}, lastSpeaker: speaker };
+  state.voiceStudio.lastSpeaker = speaker;
+  saveState();
+  document.querySelectorAll('.vs-speaker').forEach((b) => {
+    b.classList.toggle('active', b.dataset.speaker === speaker);
+  });
+  vsPlaylist = buildVoiceStudioPlaylist(speaker);
+  vsIdx = 0;
+  vsRenderCard();
+}
+
+function bindVoiceStudio() {
+  const open = el('vs-open');
+  if (open) open.addEventListener('click', openVoiceStudio);
+  const close = el('vs-close');
+  if (close) close.addEventListener('click', closeVoiceStudio);
+  const back = el('vs-backdrop');
+  if (back) back.addEventListener('click', closeVoiceStudio);
+
+  document.querySelectorAll('.vs-speaker').forEach((b) => {
+    b.addEventListener('click', () => vsSwitchSpeaker(b.dataset.speaker));
+  });
+
+  const rec = el('vs-record');
+  if (rec) rec.addEventListener('click', vsToggleRecord);
+
+  const skip = el('vs-skip');
+  if (skip) skip.addEventListener('click', vsSkipCurrent);
+
+  const redo = el('vs-redo');
+  if (redo) redo.addEventListener('click', () => {
+    el('vs-playback').style.display = 'none';
+    vsChunks = [];
+    el('vs-status').textContent = 'Tap record, say it, tap stop.';
+  });
+
+  const save = el('vs-save-next');
+  if (save) save.addEventListener('click', vsSaveAndNext);
+}
+
+// ════════════════════════════════════════════════════════════
 //  FEATURE 4½ — CAPTURE & GROW ("Heard at home")
 // ════════════════════════════════════════════════════════════
 //
@@ -3069,6 +3366,7 @@ async function boot() {
   bindEavesdrop();
   bindMirror();
   bindVoiceBank();
+  bindVoiceStudio();
   bindStuck();
   bindCapture();
   bindVerbMode();
