@@ -391,13 +391,26 @@ function renderHeroPhrase() {
   const hero = heroPhraseForToday();
   if (!hero) { slot.innerHTML = ''; return; }
   const ph = (typeof spanishToPhonetic === 'function') ? spanishToPhonetic(hero.es) : '';
+  const esFirst = state.settings.direction === 'es-en';
+  let body;
+  if (esFirst) {
+    body = `
+      <div class="hero-es">${hero.es}</div>
+      ${ph ? `<div class="hero-ph">${ph}</div>` : ''}
+      <div class="hero-en">${hero.en}</div>
+    `;
+  } else {
+    body = `
+      <div class="hero-en">${hero.en}</div>
+      <div class="hero-es">${hero.es}</div>
+      ${ph ? `<div class="hero-ph">${ph}</div>` : ''}
+    `;
+  }
   slot.innerHTML = `
     <div class="hero-card">
       <div class="hero-eyebrow">Today</div>
       <div class="hero-why">${hero.why}</div>
-      <div class="hero-es">${hero.es}</div>
-      ${ph ? `<div class="hero-ph">${ph}</div>` : ''}
-      <div class="hero-en">${hero.en}</div>
+      ${body}
       <button class="hero-play act primary" type="button" aria-label="Play">
         ${ICONS.play}<span>Play</span>
       </button>
