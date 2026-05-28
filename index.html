@@ -214,6 +214,7 @@
           <button class="live-tab active" data-mode="eavesdrop">Listen</button>
           <button class="live-tab" data-mode="mirror">Mirror</button>
           <button class="live-tab" data-mode="stuck">Stuck</button>
+          <button class="live-tab" data-mode="verbs">Verbs</button>
         </div>
       </div>
 
@@ -291,6 +292,22 @@
           <div class="stuck-en" id="stuck-en"></div>
           <button class="act primary" id="stuck-repeat" style="margin-top:14px"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg><span>Say it again</span></button>
         </div>
+      </div>
+
+      <!-- VERBS — full conjugation lookup -->
+      <div class="live-mode" id="mode-verbs" style="display:none">
+        <div class="live-intro">
+          <h2>Verb Conjugations</h2>
+          <p>Type any Spanish verb in the infinitive (<em>hablar, comer, ir, tener…</em>). Get every tense and person, with phonetics. Tap any form to hear it spoken.</p>
+        </div>
+
+        <div class="verb-search-row">
+          <input type="text" id="verb-input" class="verb-input" placeholder="hablar, ir, tener…" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <button class="act primary" id="verb-go" type="button">Conjugate</button>
+        </div>
+        <div id="verb-suggest" class="verb-suggest"></div>
+
+        <div id="verb-result" class="verb-result" style="display:none"></div>
       </div>
 
     </div>
@@ -563,6 +580,7 @@
 <script src="./data.js"></script>
 <script src="./en-phonetic-dict.js"></script>
 <script src="./register-variants.js"></script>
+<script src="./conjugator.js"></script>
 <script src="./app.js"></script>
 <script>
   if ('serviceWorker' in navigator) {

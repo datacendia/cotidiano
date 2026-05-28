@@ -153,48 +153,64 @@ function extractEnglishWords(dataPath) {
 }
 
 // ── Main ────────────────────────────────────────────────────────────
+// Modes:
+//   default  — bake every word in CMUdict (extensive, ~3 MB) so the app
+//              can transcribe any English text the user types
+//   --subset — only words used in data.js (~14 KB, fast load)
+const MODE = process.argv.includes('--subset') ? 'subset' : 'full';
+
 (async function main() {
   const cmuText = await fetchCmudict();
   const cmu = parseCmudict(cmuText);
   console.log(`Parsed CMUdict: ${cmu.size.toLocaleString()} entries`);
 
-  const words = extractEnglishWords(DATA_PATH);
-  console.log(`Unique English words in data.js: ${words.length.toLocaleString()}`);
-
   const dict = {};
-  const missing = [];
-  for (const w of words) {
-    // Try the word as-is first (preserves contractions like "don't"), then a few
-    // common rewrites (apostrophe stripped, "'s" → "s") so contractions still
-    // resolve when the runtime strips apostrophes before lookup.
-    const candidates = [w, w.replace(/'/g, ''), w.replace(/'s$/, 's')];
-    let phs = null;
-    for (const c of candidates) { if (c && cmu.has(c)) { phs = cmu.get(c); break; } }
-    if (!phs) { missing.push(w); continue; }
-    // Store under the apostrophe-stripped key so runtime (which strips) can find it.
-    dict[w.replace(/'/g, '')] = arpaToSpanish(phs);
-  }
-  const hits = Object.keys(dict).length;
-  const pct = ((hits / words.length) * 100).toFixed(1);
-  console.log(`Coverage: ${hits}/${words.length} (${pct}%)`);
-  if (missing.length) {
-    console.log(`Missed (${missing.length}): ${missing.slice(0, 40).join(', ')}${missing.length > 40 ? ', ...' : ''}`);
+  let coverageMsg = '';
+
+  if (MODE === 'full') {
+    // Bake every CMUdict entry. Skip entries with non-letter characters in
+    // the head (numbers like "9/11" are useless here) but keep apostrophes.
+    let kept = 0, skipped = 0;
+    for (const [word, phs] of cmu) {
+      if (!/^[a-z][a-z']*$/.test(word)) { skipped++; continue; }
+      // Store under apostrophe-stripped key so runtime lookups still match.
+      const key = word.replace(/'/g, '');
+      if (key.length < 1) continue;
+      dict[key] = arpaToSpanish(phs);
+      kept++;
+    }
+    coverageMsg = `Full bake: ${kept.toLocaleString()} entries (${skipped.toLocaleString()} skipped — non-letter heads).`;
+    console.log(coverageMsg);
+  } else {
+    // Subset mode: only words that appear in data.js
+    const words = extractEnglishWords(DATA_PATH);
+    console.log(`Unique English words in data.js: ${words.length.toLocaleString()}`);
+    const missing = [];
+    for (const w of words) {
+      const candidates = [w, w.replace(/'/g, ''), w.replace(/'s$/, 's')];
+      let phs = null;
+      for (const c of candidates) { if (c && cmu.has(c)) { phs = cmu.get(c); break; } }
+      if (!phs) { missing.push(w); continue; }
+      dict[w.replace(/'/g, '')] = arpaToSpanish(phs);
+    }
+    const hits = Object.keys(dict).length;
+    const pct = ((hits / words.length) * 100).toFixed(1);
+    coverageMsg = `Subset bake: ${hits}/${words.length} (${pct}%) words from data.js.`;
+    console.log(coverageMsg);
+    if (missing.length) {
+      const missPath = path.join(__dirname, 'missing-words.txt');
+      fs.writeFileSync(missPath, missing.join('\n') + '\n');
+      console.log(`Missing words written to ${missPath}`);
+    }
   }
 
   const banner =
     `// AUTO-GENERATED — do not edit by hand.\n` +
     `// Source: CMU Pronouncing Dictionary (BSD-2)\n` +
-    `// Run: node scripts/build-en-dict.js to regenerate.\n` +
-    `// Coverage: ${hits}/${words.length} words from data.js (${pct}%)\n` +
+    `// Run: node scripts/build-en-dict.js [--subset] to regenerate.\n` +
+    `// ${coverageMsg}\n` +
     `// Generated: ${new Date().toISOString()}\n`;
   const js = banner + 'window.EN_DICT = ' + JSON.stringify(dict) + ';\n';
   fs.writeFileSync(OUT_PATH, js);
-  console.log(`Wrote ${OUT_PATH} (${(js.length / 1024).toFixed(1)} KB)`);
-
-  // Also dump the missing list so we can curate overrides for them.
-  if (missing.length) {
-    const missPath = path.join(__dirname, 'missing-words.txt');
-    fs.writeFileSync(missPath, missing.join('\n') + '\n');
-    console.log(`Missing words written to ${missPath}`);
-  }
+  console.log(`Wrote ${OUT_PATH} (${(js.length / 1024 / 1024).toFixed(2)} MB / ${(js.length / 1024).toFixed(1)} KB)`);
 })().catch((e) => { console.error(e); process.exit(1); });

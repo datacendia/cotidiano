@@ -1721,12 +1721,16 @@ function openLiveMode(mode) {
   document.querySelectorAll('.live-tab').forEach((t) => {
     t.classList.toggle('active', t.dataset.mode === mode);
   });
-  ['eavesdrop', 'mirror', 'stuck'].forEach((m) => {
+  ['eavesdrop', 'mirror', 'stuck', 'verbs'].forEach((m) => {
     const node = el('mode-' + m);
     if (node) node.style.display = m === mode ? '' : 'none';
   });
   // Stop other modes when switching
   if (mode !== 'eavesdrop') stopEavesdrop();
+  // Auto-focus the verb input when entering verbs mode
+  if (mode === 'verbs') {
+    setTimeout(() => { const i = el('verb-input'); if (i) i.focus(); }, 80);
+  }
 }
 
 function bindLiveTabs() {
@@ -1734,6 +1738,151 @@ function bindLiveTabs() {
     t.addEventListener('click', () => openLiveMode(t.dataset.mode));
   });
   el('live-exit').addEventListener('click', () => { stopEavesdrop(); setTab('home'); });
+}
+
+// ════════════════════════════════════════════════════════════
+//  VERB CONJUGATION MODE
+// ════════════════════════════════════════════════════════════
+
+const VERB_TENSES = [
+  { key: 'present',     label: 'Present',          subtitle: 'yo hablo' },
+  { key: 'preterite',   label: 'Preterite',        subtitle: 'yo hablé' },
+  { key: 'imperfect',   label: 'Imperfect',        subtitle: 'yo hablaba' },
+  { key: 'future',      label: 'Future',           subtitle: 'yo hablaré' },
+  { key: 'conditional', label: 'Conditional',      subtitle: 'yo hablaría' },
+  { key: 'presSubj',    label: 'Present Subjunctive', subtitle: 'que yo hable' },
+  { key: 'imperative',  label: 'Imperative',       subtitle: '¡habla! / ¡hable!' },
+];
+const PERSON_LABELS = ['yo', 'tú', 'él/ella/Ud.', 'nosotros', 'vosotros', 'ellos/Uds.'];
+
+function showVerbConjugation(verb) {
+  if (!verb) return;
+  const conj = (typeof window !== 'undefined' && window.conjugate) ? window.conjugate(verb) : null;
+  const result = el('verb-result');
+  if (!result) return;
+  if (!conj) {
+    result.style.display = '';
+    result.innerHTML = `
+      <div class="empty">
+        <h3>Couldn't conjugate "${escapeHtml(verb)}"</h3>
+        <p>Make sure it's a Spanish infinitive ending in <strong>-ar</strong>, <strong>-er</strong>, or <strong>-ir</strong>.</p>
+      </div>
+    `;
+    return;
+  }
+
+  // Header card
+  const header = `
+    <div class="verb-header">
+      <div class="verb-inf">${escapeHtml(conj.infinitive)}</div>
+      ${conj.translation ? `<div class="verb-trans">${escapeHtml(conj.translation)}</div>` : ''}
+      <div class="verb-tags">
+        ${conj.irregular ? '<span class="verb-tag tag-irreg">irregular</span>' : ''}
+        ${conj.stemChange ? `<span class="verb-tag tag-stem">stem ${escapeHtml(conj.stemChange)}</span>` : ''}
+        ${!conj.irregular && !conj.stemChange ? '<span class="verb-tag tag-reg">regular</span>' : ''}
+      </div>
+      <div class="verb-nonfinite">
+        <button class="verb-cell verb-nf" data-text="${escapeHtml(conj.gerund)}">
+          <span class="verb-nf-lbl">gerund</span>
+          <span class="verb-nf-form">${escapeHtml(conj.gerund)}</span>
+          <span class="verb-nf-ph">${escapeHtml(spanishToPhonetic(conj.gerund))}</span>
+        </button>
+        <button class="verb-cell verb-nf" data-text="${escapeHtml(conj.participle)}">
+          <span class="verb-nf-lbl">participle</span>
+          <span class="verb-nf-form">${escapeHtml(conj.participle)}</span>
+          <span class="verb-nf-ph">${escapeHtml(spanishToPhonetic(conj.participle))}</span>
+        </button>
+      </div>
+    </div>
+  `;
+
+  // Tenses
+  const tenseHtml = VERB_TENSES.map((t) => {
+    const forms = conj.tenses[t.key];
+    if (!forms) return '';
+    const cells = forms.map((f, p) => {
+      if (!f) {
+        return `<div class="verb-cell verb-empty"><span class="verb-person">${PERSON_LABELS[p]}</span><span class="verb-form">—</span></div>`;
+      }
+      const ph = spanishToPhonetic(f);
+      return `
+        <button class="verb-cell" data-text="${escapeHtml(f)}">
+          <span class="verb-person">${PERSON_LABELS[p]}</span>
+          <span class="verb-form">${escapeHtml(f)}</span>
+          <span class="verb-ph">${escapeHtml(ph)}</span>
+        </button>
+      `;
+    }).join('');
+    return `
+      <div class="verb-tense">
+        <div class="verb-tense-head">
+          <span class="verb-tense-lbl">${t.label}</span>
+          <span class="verb-tense-sub">${t.subtitle}</span>
+        </div>
+        <div class="verb-grid">${cells}</div>
+      </div>
+    `;
+  }).join('');
+
+  result.style.display = '';
+  result.innerHTML = header + tenseHtml;
+  // Wire click-to-speak on every cell
+  result.querySelectorAll('.verb-cell[data-text]').forEach((cell) => {
+    cell.addEventListener('click', () => {
+      const txt = cell.dataset.text;
+      speak(txt, { btn: cell });
+    });
+  });
+}
+
+function refreshVerbSuggestions() {
+  const input = el('verb-input');
+  const sugBox = el('verb-suggest');
+  if (!input || !sugBox) return;
+  const q = input.value.trim();
+  if (!q) { sugBox.innerHTML = ''; sugBox.style.display = 'none'; return; }
+  const list = (typeof window !== 'undefined' && window.lookupVerb) ? window.lookupVerb(q) : [];
+  if (!list.length) { sugBox.innerHTML = ''; sugBox.style.display = 'none'; return; }
+  sugBox.innerHTML = list.map((s) =>
+    `<button type="button" class="verb-sugg" data-verb="${escapeHtml(s.verb)}">
+       <span class="verb-sugg-v">${escapeHtml(s.verb)}</span>
+       <span class="verb-sugg-m">${escapeHtml(s.meaning)}</span>
+     </button>`
+  ).join('');
+  sugBox.style.display = '';
+  sugBox.querySelectorAll('.verb-sugg').forEach((b) => {
+    b.addEventListener('click', () => {
+      const v = b.dataset.verb;
+      input.value = v;
+      sugBox.style.display = 'none';
+      sugBox.innerHTML = '';
+      showVerbConjugation(v);
+    });
+  });
+}
+
+function bindVerbMode() {
+  const input = el('verb-input');
+  const goBtn = el('verb-go');
+  if (!input || !goBtn) return;
+  input.addEventListener('input', refreshVerbSuggestions);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const v = input.value.trim();
+      if (v) {
+        el('verb-suggest').style.display = 'none';
+        showVerbConjugation(v);
+      }
+    }
+  });
+  goBtn.addEventListener('click', () => {
+    const v = input.value.trim();
+    if (v) {
+      el('verb-suggest').style.display = 'none';
+      showVerbConjugation(v);
+    }
+  });
 }
 
 // ════════════════════════════════════════════════════════════
@@ -2728,6 +2877,7 @@ async function boot() {
   bindVoiceBank();
   bindStuck();
   bindCapture();
+  bindVerbMode();
   // Load voice bank index
   try { await openVoiceBankDB(); await loadVoiceBankIndex(); } catch {}
 
