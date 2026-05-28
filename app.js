@@ -76,21 +76,33 @@ function allPhrases() {
 }
 
 // ── TTS ────────────────────────────────────────────────────
+// Score a Spanish voice by quality heuristics so we pick the best one the OS
+// actually has installed. Higher = better. Lima-tuned: es-PE ranks above es-ES.
+function voiceScore(v) {
+  const langPriority = { 'es-PE': 100, 'es-MX': 95, 'es-CO': 90, 'es-419': 88, 'es-AR': 85, 'es-CL': 80, 'es-US': 75, 'es-ES': 60, 'es': 50 };
+  let score = langPriority[v.lang] != null ? langPriority[v.lang] : (v.lang.startsWith('es') ? 40 : 0);
+  const name = (v.name || '').toLowerCase();
+  if (/(natural|neural|enhanced|premium|online|wavenet|studio)/.test(name)) score += 30;
+  if (/(paulina|mónica|monica|juan|jorge|sofía|sofia|miguel|elena|laura|diego|isabel)/.test(name)) score += 15;
+  if (/(espeak|compact|microsoft sabina)/.test(name)) score -= 20;
+  if (v.localService) score += 5;
+  if (v.default) score += 2;
+  return score;
+}
+
 function loadVoices() {
   const voices = speechSynthesis.getVoices();
   const sel = document.getElementById('voice-select');
   if (!voices.length) return;
   voicesReady = true;
-  // Prefer es-MX, es-PE, es-CO, es-AR, then any es-*
   const spanishVoices = voices.filter((v) => v.lang.startsWith('es'));
-  const priority = ['es-MX', 'es-PE', 'es-CO', 'es-AR', 'es-CL', 'es-US', 'es-ES'];
-  spanishVoices.sort((a, b) => {
-    const ai = priority.indexOf(a.lang); const bi = priority.indexOf(b.lang);
-    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-  });
-  sel.innerHTML = '<option value="auto">Auto (best match)</option>' +
-    spanishVoices.map((v) => `<option value="${v.name}">${v.lang} — ${v.name}</option>`).join('');
-  sel.value = state.settings.voice || 'auto';
+  spanishVoices.sort((a, b) => voiceScore(b) - voiceScore(a));
+  if (sel) {
+    const best = spanishVoices[0];
+    sel.innerHTML = '<option value="auto">Auto (best match)</option>' +
+      spanishVoices.map((v) => `<option value="${v.name}">${v.lang} — ${v.name}${v === best ? ' ★' : ''}</option>`).join('');
+    sel.value = state.settings.voice || 'auto';
+  }
   pickVoice();
 }
 
@@ -102,11 +114,7 @@ function pickVoice() {
     if (currentVoice) return;
   }
   const spanishVoices = voices.filter((v) => v.lang.startsWith('es'));
-  const priority = ['es-MX', 'es-PE', 'es-CO', 'es-AR', 'es-CL', 'es-US', 'es-ES'];
-  for (const lang of priority) {
-    const v = spanishVoices.find((v) => v.lang === lang);
-    if (v) { currentVoice = v; return; }
-  }
+  spanishVoices.sort((a, b) => voiceScore(b) - voiceScore(a));
   currentVoice = spanishVoices[0] || null;
 }
 
@@ -163,15 +171,36 @@ function greetingForTime() {
 
 function suggestForTime() {
   const h = new Date().getHours();
-  if (h < 6) return { groupKey: 'daily', sectionId: 'bedroom', ttl: 'Right now', msg: 'Quiet talk with Stephania — bedroom phrases.' };
-  if (h < 9) return { groupKey: 'daily', sectionId: 'waking', ttl: 'Morning routine', msg: 'Wake up the kids and Stephania with the right phrases.' };
-  if (h < 11) return { groupKey: 'daily', sectionId: 'breakfast', ttl: 'Breakfast time', msg: 'Try the breakfast and kids-morning phrases.' };
-  if (h < 13) return { groupKey: 'daily', sectionId: 'office', ttl: 'Office hours', msg: 'Office small talk and meetings.' };
-  if (h < 15) return { groupKey: 'daily', sectionId: 'lunch', ttl: 'Almuerzo', msg: 'Lunch phrases — order, share, chat.' };
-  if (h < 18) return { groupKey: 'work', sectionId: 'meetings', ttl: 'Work mode', msg: 'Tech meetings and client conversations.' };
-  if (h < 20) return { groupKey: 'daily', sectionId: 'groceries', ttl: 'On the way home', msg: 'Groceries, bus, taxi.' };
-  if (h < 22) return { groupKey: 'daily', sectionId: 'dinner', ttl: 'Family evening', msg: 'Dinner, family time, kids.' };
-  return { groupKey: 'daily', sectionId: 'bedroom', ttl: 'Wind down', msg: 'Putting kids to bed, bedroom talk.' };
+  // Personalise the suggestion text using saved name. If unset, fall back to neutral.
+  const youHave = (msg) => msg; // placeholder for future name interpolation if needed
+  if (h < 6) return { groupKey: 'daily', sectionId: 'bedroom', ttl: 'Right now', msg: youHave('Quiet talk with Stephania — bedroom phrases.') };
+  if (h < 9) return { groupKey: 'daily', sectionId: 'waking', ttl: 'Morning routine', msg: youHave('Wake up Joaquín and Emiliano with the right phrases.') };
+  if (h < 11) return { groupKey: 'daily', sectionId: 'breakfast', ttl: 'Breakfast time', msg: youHave('Breakfast with the boys — try the breakfast and kids-morning phrases.') };
+  if (h < 13) return { groupKey: 'daily', sectionId: 'office', ttl: 'Office hours', msg: youHave('Office small talk and meetings at Datacendia.') };
+  if (h < 15) return { groupKey: 'daily', sectionId: 'lunch', ttl: 'Almuerzo', msg: youHave('Lunch phrases — order, share, chat.') };
+  if (h < 18) return { groupKey: 'work', sectionId: 'meetings', ttl: 'Work mode', msg: youHave('Tech meetings and client conversations.') };
+  if (h < 20) return { groupKey: 'daily', sectionId: 'groceries', ttl: 'On the way home', msg: youHave('Groceries, bus, taxi — the run-home phrases.') };
+  if (h < 22) return { groupKey: 'parenting', sectionId: 'bedtime-routine', ttl: 'Family evening', msg: youHave('Bath, story, lights out — the bedtime routine.') };
+  return { groupKey: 'daily', sectionId: 'bedroom', ttl: 'Wind down', msg: youHave('Quiet phrases for after the kids are asleep.') };
+}
+
+// Pick a single "hero" phrase to surface today — deterministic per day, biased
+// toward phrases the user has actually saved or those tied to upcoming birthdays.
+function heroPhraseForToday() {
+  if (typeof BIRTHDAYS !== 'undefined') {
+    const today = new Date();
+    for (const b of BIRTHDAYS) {
+      if (b.memoriam) continue;
+      const d = daysUntilBirthday(b.date, today);
+      if (d === 0) {
+        return { es: `¡Feliz cumpleaños, ${b.name}!`, en: `Happy birthday, ${b.name}!`, why: `It's ${b.name}'s birthday today.` };
+      }
+      if (d === 1) {
+        return { es: `Mañana cumple ${b.name}`, en: `Tomorrow is ${b.name}'s birthday`, why: `${b.name}'s birthday is tomorrow — prep.` };
+      }
+    }
+  }
+  return null;
 }
 
 function renderHome() {
@@ -200,6 +229,9 @@ function renderHome() {
 
   // "Heard at home" card — shows recent captures with deep link to feed
   renderCapturesHomeCard();
+
+  // Weekly digest — quiet retention without gamification
+  renderWeeklyDigest();
 
   // Practice CTA — show count due
   el('due-count').textContent = countDuePhrases();
@@ -335,6 +367,44 @@ function renderBirthdaysBox() {
       speak(b.dataset.text, { btn: b });
     });
   });
+}
+
+// ── Weekly digest ──────────────────────────────────────────
+// Subtle, non-gamified retention. Counts what the user actually did this week
+// from existing state (captures, learned, practice). Only renders when there
+// is something to celebrate; otherwise stays out of the way.
+function renderWeeklyDigest() {
+  const slot = el('weekly-digest');
+  if (!slot) return;
+  const weekAgo = Date.now() - 7 * 86400000;
+
+  // Captures this week (state.captures has ts on each)
+  const capturesThisWeek = (state.captures || []).filter((c) => c && c.ts && c.ts > weekAgo).length;
+
+  // Phrases marked "learned" this week (timestamp added in toggleLearned)
+  const learnedThisWeek = Object.values(state.learned || {})
+    .filter((v) => typeof v === 'number' && v > weekAgo).length;
+
+  // Practice sessions this week (state.practice[id].lastAt added in ratePhrase)
+  const practicedThisWeek = Object.values(state.practice || {})
+    .filter((r) => r && r.lastAt && r.lastAt > weekAgo).length;
+
+  if (!capturesThisWeek && !learnedThisWeek && !practicedThisWeek) {
+    slot.innerHTML = '';
+    return;
+  }
+
+  const bits = [];
+  if (learnedThisWeek)   bits.push(`<strong>${learnedThisWeek}</strong> learned`);
+  if (practicedThisWeek) bits.push(`<strong>${practicedThisWeek}</strong> practiced`);
+  if (capturesThisWeek)  bits.push(`<strong>${capturesThisWeek}</strong> captured`);
+
+  slot.innerHTML = `
+    <div class="week-card">
+      <div class="week-head">This week</div>
+      <div class="week-body">${bits.join(' · ')}</div>
+    </div>
+  `;
 }
 
 function renderCapturesHomeCard() {
@@ -668,7 +738,7 @@ function attachPhraseEvents(container) {
 
     checkBtn.addEventListener('click', () => {
       if (state.learned[id]) delete state.learned[id];
-      else state.learned[id] = true;
+      else state.learned[id] = Date.now(); // timestamp powers "learned this week" digest
       saveState();
       checkBtn.classList.toggle('on');
       checkBtn.innerHTML = (state.learned[id] ? ICONS.check : '') + '<span>' + (state.learned[id] ? 'Learned' : 'Got it') + '</span>';
@@ -935,6 +1005,7 @@ function ratePhrase(phraseId, rating) {
     interval: newInterval,
     reps: rec.reps + 1,
     lastRating: rating,
+    lastAt: Date.now(), // powers "practiced this week" digest
   };
   saveState();
 }
@@ -1655,14 +1726,35 @@ function gradeCoach(heard) {
   // Word-level similarity using Levenshtein
   const tWords = tNorm.split(' ');
   const hWords = hNorm.split(' ');
-  let score;
+  let wordScore;
   if (!hNorm) {
-    score = 0;
+    wordScore = 0;
   } else {
     const dist = levenshtein(tNorm, hNorm);
     const maxLen = Math.max(tNorm.length, hNorm.length);
-    score = Math.max(0, Math.round(100 * (1 - dist / maxLen)));
+    wordScore = Math.max(0, Math.round(100 * (1 - dist / maxLen)));
   }
+
+  // Phoneme-level similarity — reuses the existing Spanish phonetic engine.
+  // Catches mispronunciations the orthographic compare misses (e.g. user said
+  // "hola" but transcribed "ola" — same phonemes, similar score).
+  let phonScore = wordScore;
+  let tPhon = '', hPhon = '';
+  if (hNorm) {
+    try {
+      tPhon = spanishToPhonetic(target).toLowerCase().replace(/[^a-z]/g, '');
+      hPhon = spanishToPhonetic(heard).toLowerCase().replace(/[^a-z]/g, '');
+      if (tPhon && hPhon) {
+        const pDist = levenshtein(tPhon, hPhon);
+        const pMax = Math.max(tPhon.length, hPhon.length);
+        phonScore = Math.max(0, Math.round(100 * (1 - pDist / pMax)));
+      }
+    } catch (e) { /* fall back to wordScore */ }
+  }
+
+  // Combined score — average of both, but if either is high the user wins (we
+  // care more about being understood than about exact spelling).
+  const score = Math.max(wordScore, Math.round((wordScore + phonScore) / 2));
 
   // Visual word diff
   const diffHtml = renderWordDiff(tWords, hWords);
@@ -1681,10 +1773,27 @@ function gradeCoach(heard) {
   el('coach-diff-target').innerHTML = tWords.map((w) => `<span class="ok">${w}</span>`).join(' ');
   el('coach-diff-got').innerHTML = diffHtml;
 
+  // Phonetic diff line — hidden if either side is empty
+  const phonEl = el('coach-phon-diff');
+  if (phonEl) {
+    if (tPhon && hPhon && tPhon !== hPhon) {
+      const tShow = spanishToPhonetic(target);
+      const hShow = spanishToPhonetic(heard);
+      phonEl.style.display = '';
+      phonEl.innerHTML = `<div class="coach-phon-row"><span class="coach-phon-lbl">Target sound:</span> <span class="coach-phon-tx">${tShow}</span></div>
+        <div class="coach-phon-row"><span class="coach-phon-lbl">You said:</span> <span class="coach-phon-tx">${hShow}</span></div>
+        <div class="coach-phon-meta">Phoneme match: <strong>${phonScore}%</strong></div>`;
+    } else {
+      phonEl.style.display = 'none';
+      phonEl.innerHTML = '';
+    }
+  }
+
   let feedback;
   if (!hNorm) feedback = "Didn't catch anything. Speak a bit louder and closer to the mic.";
   else if (score >= 95) feedback = 'Perfect pronunciation. The speech engine recognised every word.';
   else if (score >= 85) feedback = 'Great — very close to native. One or two small word differences.';
+  else if (score >= 60 && phonScore >= 80) feedback = 'Sounds were on target — a couple of words came out differently.';
   else if (score >= 60) feedback = 'On the right track. Listen to the target again and notice the stressed syllables.';
   else feedback = 'The speech engine heard something different from the target. Try slower and more deliberate.';
   el('coach-feedback').textContent = feedback;

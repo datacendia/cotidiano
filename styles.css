@@ -199,6 +199,48 @@ header.top {
   font-size: 1rem; color: var(--ac); font-weight: 600;
   letter-spacing: 0.01em; margin-bottom: 14px;
 }
+/* Weekly digest — quiet retention card on Home */
+#weekly-digest:empty { display: none; }
+.week-card {
+  margin: 14px 16px 0;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: var(--cd);
+  border: 1px solid var(--rl);
+  display: flex; align-items: baseline; gap: 14px;
+}
+.week-head {
+  font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--mu);
+}
+.week-body { font-size: 0.95rem; color: var(--tx); }
+.week-body strong { color: var(--ac); font-weight: 700; margin-right: 2px; }
+
+/* Coach modal — phoneme-level pronunciation diff */
+.coach-phon-diff {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(0,0,0,0.03);
+  border: 1px solid var(--rl);
+  font-size: 0.85rem;
+}
+.coach-phon-row { margin-bottom: 4px; }
+.coach-phon-lbl {
+  display: inline-block; min-width: 100px;
+  font-size: 0.75rem; color: var(--mu);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.coach-phon-tx {
+  font-family: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+  color: var(--ac); font-weight: 600;
+}
+.coach-phon-meta {
+  margin-top: 6px;
+  font-size: 0.75rem; color: var(--mu);
+}
+.coach-phon-meta strong { color: var(--ac); }
+
 /* Viewer-language chips in settings */
 .vr-chip {
   padding: 6px 12px;
