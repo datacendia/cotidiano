@@ -1243,6 +1243,199 @@ const DATA = {
     ]
   },
 
+  /* ════════════════════════════════════════════════════
+     BUREAUCRACY — the things every adult in Lima has to
+     deal with eventually: banks, DNI, SUNAT, AFP, notary.
+     ════════════════════════════════════════════════════ */
+  bureaucracy: {
+    title: "Bureaucracy",
+    icon: "🏛️",
+    sections: [
+
+      { id: "banking", title: "Banking", icon: "🏦", phrases: [
+        { en: "I want to open an account", es: "Quiero abrir una cuenta", ph: "kee-EH-roh ah-BREER OO-nah KWEHN-tah" },
+        { en: "Savings or checking?", es: "¿Ahorros o corriente?", ph: "ah-OH-rrohs oh kohr-ree-EHN-teh", note: "BCP/Interbank ask this constantly." },
+        { en: "I need to transfer money", es: "Necesito hacer una transferencia", ph: "neh-seh-SEE-toh ah-SEHR OO-nah trahns-feh-REHN-syah" },
+        { en: "Interbank or to the same bank?", es: "¿Interbancaria o al mismo banco?", ph: "een-tehr-bahn-KAH-ryah oh ahl MEES-moh BAHN-koh", note: "Interbank fees in Peru are low — use them." },
+        { en: "What's the CCI number?", es: "¿Cuál es el CCI?", ph: "KWAHL ehs ehl seh-seh-EE", note: "Código de Cuenta Interbancaria — needed for all wire transfers." },
+        { en: "The ATM ate my card", es: "El cajero se tragó mi tarjeta", ph: "ehl kah-HEH-roh seh trah-GOH mee tahr-HEH-tah" },
+        { en: "I need to block my card", es: "Necesito bloquear mi tarjeta", ph: "neh-seh-SEE-toh bloh-keh-AHR mee tahr-HEH-tah" },
+        { en: "I forgot my password", es: "Olvidé mi clave", ph: "ohl-vee-DEH mee KLAH-veh" },
+        { en: "What's the daily withdrawal limit?", es: "¿Cuál es el límite diario de retiro?", ph: "KWAHL ehs ehl LEE-mee-teh dee-AH-ryoh deh rreh-TEE-roh" },
+        { en: "I want to dispute this charge", es: "Quiero reclamar este cargo", ph: "kee-EH-roh rreh-klah-MAHR EHS-teh KAHR-goh" },
+        { en: "Where do I sign?", es: "¿Dónde firmo?", ph: "DOHN-deh FEER-moh" },
+        { en: "Take a token from the machine", es: "Saca un ticket de la máquina", ph: "SAH-kah oon TEE-keht deh lah MAH-kee-nah", note: "Number-queue tickets at every Peruvian bank." },
+        { en: "What's my account balance?", es: "¿Cuál es mi saldo?", ph: "KWAHL ehs mee SAHL-doh" },
+        { en: "Can I do this online?", es: "¿Puedo hacer esto por internet?", ph: "PWEH-doh ah-SEHR EHS-toh pohr een-tehr-NEHT" },
+      ]},
+
+      { id: "dni-reniec", title: "DNI · RENIEC", icon: "🪪", phrases: [
+        { en: "I need to renew my DNI", es: "Necesito renovar mi DNI", ph: "neh-seh-SEE-toh rreh-noh-VAHR mee deh-NEH-EE", note: "DNI = national ID. RENIEC handles it." },
+        { en: "My DNI expired", es: "Mi DNI venció", ph: "mee deh-NEH-EE vehn-SYOH" },
+        { en: "I lost my DNI", es: "Perdí mi DNI", ph: "pehr-DEE mee deh-NEH-EE" },
+        { en: "I need a duplicate", es: "Necesito un duplicado", ph: "neh-seh-SEE-toh oon doo-plee-KAH-doh" },
+        { en: "Where do I get the photo taken?", es: "¿Dónde me toman la foto?", ph: "DOHN-deh meh TOH-mahn lah FOH-toh" },
+        { en: "I need to register my son's birth", es: "Necesito inscribir el nacimiento de mi hijo", ph: "neh-seh-SEE-toh een-skree-BEER ehl nah-see-mee-EHN-toh deh mee EE-hoh", note: "Done at RENIEC within the first months." },
+        { en: "What documents do I need?", es: "¿Qué documentos necesito?", ph: "keh doh-koo-MEHN-tohs neh-seh-SEE-toh" },
+        { en: "How long does it take?", es: "¿Cuánto demora?", ph: "KWAHN-toh deh-MOH-rah" },
+        { en: "Can I pick it up tomorrow?", es: "¿Puedo recogerlo mañana?", ph: "PWEH-doh rreh-koh-HEHR-loh mah-NYAH-nah" },
+        { en: "I want to change my address", es: "Quiero cambiar mi dirección", ph: "kee-EH-roh kahm-bee-AHR mee dee-rehk-SYOHN" },
+        { en: "Pay the fee at the bank first", es: "Primero pague la tasa en el banco", ph: "pree-MEH-roh PAH-geh lah TAH-sah ehn ehl BAHN-koh", note: "Pago Fácil at Banco de la Nación — typical workflow." },
+        { en: "Bring the payment receipt", es: "Trae el comprobante de pago", ph: "TRAH-eh ehl kohm-proh-BAHN-teh deh PAH-goh" },
+        { en: "Is this the right window?", es: "¿Es esta la ventanilla correcta?", ph: "ehs EHS-tah lah vehn-tah-NEE-yah kohr-REHK-tah" },
+        { en: "Take a number, please", es: "Tome un número, por favor", ph: "TOH-meh oon NOO-meh-roh, pohr fah-VOHR" },
+      ]},
+
+      { id: "sunat-taxes", title: "SUNAT · Taxes", icon: "📑", phrases: [
+        { en: "I need my RUC", es: "Necesito mi RUC", ph: "neh-seh-SEE-toh mee RROOK", note: "RUC = tax ID. 11 digits. Used for all invoices." },
+        { en: "How do I get a RUC?", es: "¿Cómo saco un RUC?", ph: "KOH-moh SAH-koh oon RROOK" },
+        { en: "I want to issue an invoice", es: "Quiero emitir una factura", ph: "kee-EH-roh eh-mee-TEER OO-nah fahk-TOO-rah" },
+        { en: "Receipt or invoice?", es: "¿Boleta o factura?", ph: "boh-LEH-tah oh fahk-TOO-rah", note: "Boleta = personal receipt. Factura = corporate, deductible." },
+        { en: "I need an electronic invoice", es: "Necesito una factura electrónica", ph: "neh-seh-SEE-toh OO-nah fahk-TOO-rah eh-lehk-TROH-nee-kah" },
+        { en: "What's your RUC?", es: "¿Cuál es tu RUC?", ph: "KWAHL ehs too RROOK" },
+        { en: "Send it to my email", es: "Envíalo a mi correo", ph: "ehn-VEE-ah-loh ah mee koh-RREH-oh" },
+        { en: "I have to declare my taxes", es: "Tengo que declarar mis impuestos", ph: "TEHN-goh keh deh-klah-RAHR mees eem-PWEHS-tohs" },
+        { en: "What's the deadline?", es: "¿Cuál es la fecha límite?", ph: "KWAHL ehs lah FEH-chah LEE-mee-teh" },
+        { en: "I'm in the fourth category", es: "Estoy en cuarta categoría", ph: "ehs-TOY ehn KWAHR-tah kah-teh-goh-REE-ah", note: "Cuarta categoría = independent professional income tax bracket." },
+        { en: "Can I pay it in installments?", es: "¿Puedo pagar en cuotas?", ph: "PWEH-doh pah-GAHR ehn KWOH-tahs" },
+        { en: "I need a tax certificate", es: "Necesito un certificado tributario", ph: "neh-seh-SEE-toh oon sehr-tee-fee-KAH-doh tree-boo-TAH-ryoh" },
+        { en: "I'm being audited", es: "Me están auditando", ph: "meh ehs-TAHN ow-dee-TAHN-doh" },
+        { en: "I'll talk to my accountant", es: "Hablaré con mi contador", ph: "ah-blah-REH kohn mee kohn-tah-DOHR" },
+      ]},
+
+      { id: "afp-pension", title: "AFP · Pension", icon: "💼", phrases: [
+        { en: "Which AFP are you with?", es: "¿En qué AFP estás?", ph: "ehn keh ah-eh-feh-PEH ehs-TAHS", note: "AFP = private pension fund. Four exist in Peru: Habitat, Integra, Prima, Profuturo." },
+        { en: "I'm with Profuturo", es: "Estoy en Profuturo", ph: "ehs-TOY ehn proh-foo-TOO-roh" },
+        { en: "I want to switch AFPs", es: "Quiero cambiarme de AFP", ph: "kee-EH-roh kahm-bee-AHR-meh deh ah-eh-feh-PEH" },
+        { en: "What's my balance?", es: "¿Cuál es mi saldo?", ph: "KWAHL ehs mee SAHL-doh" },
+        { en: "When can I retire?", es: "¿Cuándo me puedo jubilar?", ph: "KWAHN-doh meh PWEH-doh hoo-bee-LAHR" },
+        { en: "I want to withdraw 25%", es: "Quiero retirar el veinticinco por ciento", ph: "kee-EH-roh rreh-tee-RAHR ehl beyn-tee-SEEN-koh pohr SYEHN-toh", note: "Habitat-style early withdrawals are allowed in special windows." },
+        { en: "What's my contribution rate?", es: "¿Cuál es mi tasa de aporte?", ph: "KWAHL ehs mee TAH-sah deh ah-POHR-teh" },
+        { en: "Send me my account statement", es: "Envíame mi estado de cuenta", ph: "ehn-VEE-ah-meh mee ehs-TAH-doh deh KWEHN-tah" },
+        { en: "Is this the SBS?", es: "¿Esto es la SBS?", ph: "EHS-toh ehs lah eh-seh-beh-EH-seh", note: "SBS regulates banks, AFPs, insurance." },
+        { en: "I need a notarised letter", es: "Necesito una carta notariada", ph: "neh-seh-SEE-toh OO-nah KAHR-tah noh-tah-ree-AH-dah" },
+        { en: "Sign here and initial", es: "Firme aquí y ponga sus iniciales", ph: "FEER-meh ah-KEE ee POHN-gah soos ee-nee-SYAH-lehs" },
+        { en: "I want to designate beneficiaries", es: "Quiero designar beneficiarios", ph: "kee-EH-roh deh-seeg-NAHR beh-neh-fee-SYAH-ryohs" },
+      ]},
+
+      { id: "notary-permits", title: "Notary · Permits", icon: "📋", phrases: [
+        { en: "I need a notarised document", es: "Necesito un documento notariado", ph: "neh-seh-SEE-toh oon doh-koo-MEHN-toh noh-tah-ree-AH-doh" },
+        { en: "Where's the nearest notary?", es: "¿Dónde está la notaría más cercana?", ph: "DOHN-deh ehs-TAH lah noh-tah-REE-ah MAHS sehr-KAH-nah" },
+        { en: "I need a power of attorney", es: "Necesito un poder", ph: "neh-seh-SEE-toh oon poh-DEHR", note: "'Poder' = legal POA. 'Poder amplio' = broad POA." },
+        { en: "How much is the notary fee?", es: "¿Cuánto cobra la notaría?", ph: "KWAHN-toh KOH-brah lah noh-tah-REE-ah" },
+        { en: "Both parties have to sign", es: "Ambas partes tienen que firmar", ph: "AHM-bahs PAHR-tehs tee-EH-nehn keh feer-MAHR" },
+        { en: "Bring two copies of your DNI", es: "Trae dos copias de tu DNI", ph: "TRAH-eh DOHS KOH-pyahs deh too deh-NEH-EE" },
+        { en: "I want to file a police report", es: "Quiero hacer una denuncia policial", ph: "kee-EH-roh ah-SEHR OO-nah deh-NOON-syah poh-lee-SYAHL" },
+        { en: "It was stolen yesterday", es: "Me lo robaron ayer", ph: "meh loh rroh-BAH-rohn ah-YEHR" },
+        { en: "I need a certificate of residence", es: "Necesito un certificado domiciliario", ph: "neh-seh-SEE-toh oon sehr-tee-fee-KAH-doh doh-mee-see-lee-AH-ryoh", note: "Issued by the local municipalidad." },
+        { en: "Where's the municipality?", es: "¿Dónde queda la municipalidad?", ph: "DOHN-deh KEH-dah lah moo-nee-see-pah-lee-DAHD" },
+        { en: "I need a building permit", es: "Necesito una licencia de construcción", ph: "neh-seh-SEE-toh OO-nah lee-SEHN-syah deh kohns-trook-SYOHN" },
+        { en: "Apostille at the foreign ministry", es: "Apostilla en cancillería", ph: "ah-pohs-TEE-yah ehn kahn-see-yeh-REE-ah", note: "For documents going abroad — Hague Convention." },
+        { en: "I want to legalise this signature", es: "Quiero legalizar esta firma", ph: "kee-EH-roh leh-gah-lee-SAHR EHS-tah FEER-mah" },
+        { en: "How long is this valid?", es: "¿Hasta cuándo es válido?", ph: "AHS-tah KWAHN-doh ehs VAH-lee-doh" },
+      ]},
+
+    ]
+  },
+
+  /* ════════════════════════════════════════════════════
+     HEALTH DEEP CUTS — pharmacy, specialists, labs,
+     hospital admission, insurance. The phrases you need
+     when something actually goes wrong.
+     ════════════════════════════════════════════════════ */
+  health: {
+    title: "Health Deep Cuts",
+    icon: "🏥",
+    sections: [
+
+      { id: "pharmacy", title: "Pharmacy", icon: "💊", phrases: [
+        { en: "Do you have something for a headache?", es: "¿Tienen algo para el dolor de cabeza?", ph: "TYEH-nehn AHL-goh PAH-rah ehl doh-LOHR deh kah-BEH-sah" },
+        { en: "Without a prescription", es: "Sin receta", ph: "seen rreh-SEH-tah" },
+        { en: "It needs a prescription", es: "Requiere receta médica", ph: "rreh-kee-EH-reh rreh-SEH-tah MEH-dee-kah" },
+        { en: "Generic or brand-name?", es: "¿Genérico o de marca?", ph: "heh-NEH-ree-koh oh deh MAHR-kah" },
+        { en: "The generic is cheaper", es: "El genérico es más barato", ph: "ehl heh-NEH-ree-koh ehs MAHS bah-RAH-toh", note: "InkaFarma and MiFarma are the dominant chains." },
+        { en: "I need it for my son", es: "Es para mi hijo", ph: "ehs PAH-rah mee EE-hoh" },
+        { en: "He's two years old", es: "Tiene dos años", ph: "TYEH-neh DOHS AH-nyohs" },
+        { en: "Pediatric dose, please", es: "Dosis pediátrica, por favor", ph: "DOH-sees peh-dee-AH-tree-kah, pohr fah-VOHR" },
+        { en: "Is it safe with breastfeeding?", es: "¿Es seguro con lactancia?", ph: "ehs seh-GOO-roh kohn lahk-TAHN-syah" },
+        { en: "I'm allergic to penicillin", es: "Soy alérgico a la penicilina", ph: "soy ah-LEHR-hee-koh ah lah peh-nee-see-LEE-nah" },
+        { en: "How many times a day?", es: "¿Cuántas veces al día?", ph: "KWAHN-tahs VEH-sehs ahl DEE-ah" },
+        { en: "Take it with food", es: "Tómalo con comida", ph: "TOH-mah-loh kohn koh-MEE-dah" },
+        { en: "On an empty stomach", es: "En ayunas", ph: "ehn ah-YOO-nahs" },
+        { en: "Do you deliver?", es: "¿Hacen delivery?", ph: "AH-sehn deh-LEE-veh-ree", note: "Yes — InkaFarma/MiFarma both deliver fast in Lima." },
+      ]},
+
+      { id: "specialists", title: "Specialists", icon: "🩺", phrases: [
+        { en: "I need to see a cardiologist", es: "Necesito ver a un cardiólogo", ph: "neh-seh-SEE-toh VEHR ah oon kahr-dee-OH-loh-goh" },
+        { en: "I need to see a dermatologist", es: "Necesito ver a un dermatólogo", ph: "neh-seh-SEE-toh VEHR ah oon dehr-mah-TOH-loh-goh" },
+        { en: "Can I see the pediatrician?", es: "¿Puedo ver al pediatra?", ph: "PWEH-doh VEHR ahl peh-dee-AH-trah" },
+        { en: "When's the next appointment?", es: "¿Cuándo es la próxima cita?", ph: "KWAHN-doh ehs lah PROHK-see-mah SEE-tah" },
+        { en: "Is there anything sooner?", es: "¿Hay algo antes?", ph: "AY AHL-goh AHN-tehs" },
+        { en: "I need a referral", es: "Necesito una referencia", ph: "neh-seh-SEE-toh OO-nah rreh-feh-REHN-syah" },
+        { en: "She referred me", es: "Ella me derivó", ph: "EH-yah meh deh-ree-VOH" },
+        { en: "I need a second opinion", es: "Quiero una segunda opinión", ph: "kee-EH-roh OO-nah seh-GOON-dah oh-pee-NYOHN" },
+        { en: "Is the doctor in network?", es: "¿El doctor está en convenio?", ph: "ehl dohk-TOHR ehs-TAH ehn kohn-VEH-nyoh", note: "'En convenio' = covered by your EPS plan." },
+        { en: "How much is the copay?", es: "¿Cuánto es el copago?", ph: "KWAHN-toh ehs ehl koh-PAH-goh" },
+        { en: "I need a medical certificate", es: "Necesito un certificado médico", ph: "neh-seh-SEE-toh oon sehr-tee-fee-KAH-doh MEH-dee-koh" },
+        { en: "For work — I'm on rest", es: "Para el trabajo — estoy con descanso médico", ph: "PAH-rah ehl trah-BAH-hoh — ehs-TOY kohn dehs-KAHN-soh MEH-dee-koh" },
+        { en: "How many days of rest?", es: "¿Cuántos días de descanso?", ph: "KWAHN-tohs DEE-ahs deh dehs-KAHN-soh" },
+        { en: "I need a follow-up", es: "Necesito un control", ph: "neh-seh-SEE-toh oon kohn-TROHL", note: "'Control' = check-up/follow-up appointment." },
+      ]},
+
+      { id: "lab-tests", title: "Lab Tests", icon: "🧪", phrases: [
+        { en: "I need blood work", es: "Necesito análisis de sangre", ph: "neh-seh-SEE-toh ah-NAH-lee-sees deh SAHN-greh", note: "Suiza Lab and Roe are the main private labs in Lima." },
+        { en: "Do I need to fast?", es: "¿Tengo que estar en ayunas?", ph: "TEHN-goh keh ehs-TAHR ehn ah-YOO-nahs" },
+        { en: "Twelve hours of fasting", es: "Doce horas de ayuno", ph: "DOH-seh OH-rahs deh ah-YOO-noh" },
+        { en: "Can I drink water?", es: "¿Puedo tomar agua?", ph: "PWEH-doh toh-MAHR AH-gwah" },
+        { en: "Which arm?", es: "¿Cuál brazo?", ph: "KWAHL BRAH-soh" },
+        { en: "Make a fist", es: "Cierre el puño", ph: "see-EH-rreh ehl POO-nyoh" },
+        { en: "It will sting a little", es: "Va a doler un poquito", ph: "VAH ah doh-LEHR oon poh-KEE-toh" },
+        { en: "When are the results ready?", es: "¿Cuándo están los resultados?", ph: "KWAHN-doh ehs-TAHN lohs rreh-sool-TAH-dohs" },
+        { en: "Can you email them?", es: "¿Pueden enviarlos al correo?", ph: "PWEH-dehn ehn-VYAHR-lohs ahl koh-RREH-oh" },
+        { en: "I need an X-ray", es: "Necesito una radiografía", ph: "neh-seh-SEE-toh OO-nah rrah-dyoh-grah-FEE-ah" },
+        { en: "An ultrasound", es: "Una ecografía", ph: "OO-nah eh-koh-grah-FEE-ah" },
+        { en: "An MRI", es: "Una resonancia", ph: "OO-nah rreh-soh-NAHN-syah" },
+        { en: "A CT scan", es: "Una tomografía", ph: "OO-nah toh-moh-grah-FEE-ah" },
+        { en: "Is this covered by insurance?", es: "¿Esto lo cubre el seguro?", ph: "EHS-toh loh KOO-breh ehl seh-GOO-roh" },
+      ]},
+
+      { id: "hospital-er", title: "Hospital · ER", icon: "🚑", phrases: [
+        { en: "I need to go to the ER", es: "Necesito ir a emergencias", ph: "neh-seh-SEE-toh EER ah eh-mehr-HEHN-syahs" },
+        { en: "Call an ambulance", es: "Llama una ambulancia", ph: "YAH-mah OO-nah ahm-boo-LAHN-syah" },
+        { en: "It's an emergency", es: "Es una emergencia", ph: "ehs OO-nah eh-mehr-HEHN-syah" },
+        { en: "He has chest pain", es: "Tiene dolor en el pecho", ph: "TYEH-neh doh-LOHR ehn ehl PEH-choh" },
+        { en: "She's having trouble breathing", es: "Le cuesta respirar", ph: "leh KWEHS-tah rrehs-pee-RAHR" },
+        { en: "He fell and hit his head", es: "Se cayó y se golpeó la cabeza", ph: "seh kah-YOH ee seh gohl-peh-OH lah kah-BEH-sah" },
+        { en: "How long has this been happening?", es: "¿Hace cuánto le pasa esto?", ph: "AH-seh KWAHN-toh leh PAH-sah EHS-toh" },
+        { en: "Is he going to be okay?", es: "¿Va a estar bien?", ph: "VAH ah ehs-TAHR bee-EHN" },
+        { en: "We need to admit him", es: "Tenemos que internarlo", ph: "teh-NEH-mohs keh een-tehr-NAHR-loh" },
+        { en: "Which floor is the room on?", es: "¿En qué piso está el cuarto?", ph: "ehn keh PEE-soh ehs-TAH ehl KWAHR-toh" },
+        { en: "I want to be with him", es: "Quiero acompañarlo", ph: "kee-EH-roh ah-kohm-pah-NYAHR-loh" },
+        { en: "When can he go home?", es: "¿Cuándo le dan de alta?", ph: "KWAHN-doh leh DAHN deh AHL-tah", note: "'Dar de alta' = discharge from hospital." },
+        { en: "I need a medical history", es: "Necesito su historial médico", ph: "neh-seh-SEE-toh soo ees-toh-RYAHL MEH-dee-koh" },
+        { en: "Sign the consent form", es: "Firme el consentimiento", ph: "FEER-meh ehl kohn-sehn-tee-mee-EHN-toh" },
+      ]},
+
+      { id: "insurance", title: "Insurance · EPS", icon: "📄", phrases: [
+        { en: "Which insurance do you have?", es: "¿Qué seguro tienes?", ph: "keh seh-GOO-roh TYEH-nehs", note: "Pacífico, Rímac, Mapfre are the big private insurers; EsSalud is public." },
+        { en: "I have Pacífico EPS", es: "Tengo Pacífico EPS", ph: "TEHN-goh pah-SEE-fee-koh eh-peh-EH-seh", note: "EPS = private complement to public EsSalud." },
+        { en: "Is it pre-authorised?", es: "¿Está aprobado por el seguro?", ph: "ehs-TAH ah-proh-BAH-doh pohr ehl seh-GOO-roh" },
+        { en: "I need pre-authorisation", es: "Necesito una carta de garantía", ph: "neh-seh-SEE-toh OO-nah KAHR-tah deh gah-rahn-TEE-ah", note: "Pre-auth letter from the insurer for surgery/hospital stay." },
+        { en: "How much is the deductible?", es: "¿Cuál es el deducible?", ph: "KWAHL ehs ehl deh-doo-SEE-bleh" },
+        { en: "Is this in network?", es: "¿Está en convenio?", ph: "ehs-TAH ehn kohn-VEH-nyoh" },
+        { en: "I want to file a claim", es: "Quiero hacer un reembolso", ph: "kee-EH-roh ah-SEHR oon rreh-ehm-BOHL-soh" },
+        { en: "Send me the receipts", es: "Envíame los comprobantes", ph: "ehn-VEE-ah-meh lohs kohm-proh-BAHN-tehs" },
+        { en: "How long does reimbursement take?", es: "¿Cuánto demora el reembolso?", ph: "KWAHN-toh deh-MOH-rah ehl rreh-ehm-BOHL-soh" },
+        { en: "I need to add my baby to the plan", es: "Necesito incluir al bebé en el plan", ph: "neh-seh-SEE-toh een-kloo-EER ahl beh-BEH ehn ehl PLAHN" },
+        { en: "What's covered for maternity?", es: "¿Qué cubre maternidad?", ph: "keh KOO-breh mah-tehr-nee-DAHD" },
+        { en: "Is dental included?", es: "¿Incluye dental?", ph: "een-KLOO-yeh dehn-TAHL" },
+        { en: "I want to upgrade my plan", es: "Quiero mejorar mi plan", ph: "kee-EH-roh meh-hoh-RAHR mee PLAHN" },
+        { en: "When does my coverage start?", es: "¿Cuándo empieza la cobertura?", ph: "KWAHN-doh ehm-PYEH-sah lah koh-behr-TOO-rah" },
+      ]},
+
+    ]
+  },
+
 };
 
 /* ════════════════════════════════════════════════════

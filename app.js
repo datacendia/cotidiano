@@ -20,6 +20,7 @@ const defaultState = {
     viewerReads: 'both',  // 'en' = native English (hide en-ph), 'es' = native Spanish (hide es-ph), 'both' = show both
     direction: 'en-es',   // 'en-es' = English prompt, Spanish answer · 'es-en' = reversed
   },
+  lastSection: null,    // { groupKey, sectionId, ts } — most recently opened section, for "continue where you left off"
 };
 
 let state = loadState();
@@ -233,6 +234,12 @@ function renderHome() {
   // Weekly digest — quiet retention without gamification
   renderWeeklyDigest();
 
+  // Hero phrase of the day (birthday, today's special, etc.)
+  renderHeroPhrase();
+
+  // "Continue where you left off" — last visited section within last 48h
+  renderContinueCard();
+
   // Practice CTA — show count due
   el('due-count').textContent = countDuePhrases();
 
@@ -373,6 +380,55 @@ function renderBirthdaysBox() {
 // Subtle, non-gamified retention. Counts what the user actually did this week
 // from existing state (captures, learned, practice). Only renders when there
 // is something to celebrate; otherwise stays out of the way.
+// ── Hero phrase + Continue card ──────────────────────────
+function renderHeroPhrase() {
+  const slot = el('hero-phrase');
+  if (!slot) return;
+  const hero = heroPhraseForToday();
+  if (!hero) { slot.innerHTML = ''; return; }
+  const ph = (typeof spanishToPhonetic === 'function') ? spanishToPhonetic(hero.es) : '';
+  slot.innerHTML = `
+    <div class="hero-card">
+      <div class="hero-eyebrow">Today</div>
+      <div class="hero-why">${hero.why}</div>
+      <div class="hero-es">${hero.es}</div>
+      ${ph ? `<div class="hero-ph">${ph}</div>` : ''}
+      <div class="hero-en">${hero.en}</div>
+      <button class="hero-play act primary" type="button" aria-label="Play">
+        ${ICONS.play}<span>Play</span>
+      </button>
+    </div>
+  `;
+  const btn = slot.querySelector('.hero-play');
+  if (btn) btn.addEventListener('click', () => speak(hero.es, { btn }));
+}
+
+function renderContinueCard() {
+  const slot = el('continue-card');
+  if (!slot) return;
+  const last = state.lastSection;
+  // Show only if visited within the last 48 hours and section still exists
+  if (!last || !last.groupKey || !last.sectionId) { slot.innerHTML = ''; return; }
+  if (Date.now() - (last.ts || 0) > 48 * 3600 * 1000) { slot.innerHTML = ''; return; }
+  const group = DATA[last.groupKey];
+  if (!group) { slot.innerHTML = ''; return; }
+  const section = group.sections.find((s) => s.id === last.sectionId);
+  if (!section) { slot.innerHTML = ''; return; }
+  slot.innerHTML = `
+    <button class="continue-card" type="button" data-group="${last.groupKey}" data-section="${last.sectionId}">
+      <div class="continue-eyebrow">Continue where you left off</div>
+      <div class="continue-body">
+        <span class="continue-icon">${section.icon || group.icon || ''}</span>
+        <span class="continue-title">${group.title} → ${section.title}</span>
+      </div>
+      <div class="continue-arrow">→</div>
+    </button>
+  `;
+  slot.querySelector('.continue-card').addEventListener('click', (e) => {
+    showSection(e.currentTarget.dataset.group, e.currentTarget.dataset.section);
+  });
+}
+
 function renderWeeklyDigest() {
   const slot = el('weekly-digest');
   if (!slot) return;
@@ -536,6 +592,9 @@ function showSection(groupKey, sectionId) {
   if (!section) return;
   currentSectionGroup = groupKey;
   currentSectionId = sectionId;
+  // Persist for "continue where you left off" — used by renderHome on next launch
+  state.lastSection = { groupKey, sectionId, ts: Date.now() };
+  saveState();
   showView('list');
   el('crumb-cat').textContent = `${group.title} → ${section.title}`;
   renderPhrases(section.phrases);
@@ -1312,23 +1371,23 @@ function enPhonetic(text) {
 
 function enPhoneticWord(word) {
   const key = word.toLowerCase().replace(/[\u2019']/g, '');
+  // Helper: apply original-word capitalization to a phonetic output
+  const matchCase = (out) => {
+    if (!out) return out;
+    if (word.length > 1 && word === word.toUpperCase()) return out.toUpperCase();
+    if (/^[A-Z]/.test(word) && !/^[A-Z]/.test(out)) return out.charAt(0).toUpperCase() + out.slice(1);
+    return out;
+  };
   // 1) CMU-derived dictionary (best quality — has stress markers)
   if (typeof window !== 'undefined' && window.EN_DICT && window.EN_DICT[key]) {
-    return window.EN_DICT[key];
+    return matchCase(window.EN_DICT[key]);
   }
   // 2) Hand-curated overrides for words not in CMUdict (Spanish names, etc.)
   if (EN_OVERRIDES[key]) {
-    const out = EN_OVERRIDES[key];
-    if (/^[A-Z]/.test(word) && !/[A-Z]/.test(out)) {
-      return out.charAt(0).toUpperCase() + out.slice(1);
-    }
-    return out;
+    return matchCase(EN_OVERRIDES[key]);
   }
   // 3) Heuristic rule engine for everything else (custom phrases, novel words)
-  const out = applyEnRules(word.toLowerCase());
-  if (word.length > 1 && word === word.toUpperCase()) return out.toUpperCase();
-  if (/^[A-Z]/.test(word)) return out.charAt(0).toUpperCase() + out.slice(1);
-  return out;
+  return matchCase(applyEnRules(word.toLowerCase()));
 }
 
 // Heuristic English → Spanish-readable transcription. Imperfect but readable.
