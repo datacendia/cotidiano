@@ -110,6 +110,7 @@
             <div class="practice-prompt-text" id="practice-back-es">…</div>
             <div class="practice-back-ph" id="practice-back-ph">…</div>
             <div class="practice-back-en" id="practice-back-en">…</div>
+            <div class="practice-back-enph" id="practice-back-enph"></div>
             <button class="act primary" id="practice-play" style="margin-top:14px"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg><span>Hear it</span></button>
           </div>
         </div>
@@ -398,6 +399,23 @@
 
   <div class="sheet-row">
     <div>
+      <div class="lbl">Your name</div>
+      <div class="sub-lbl">Used in the home greeting</div>
+    </div>
+    <input type="text" id="name-edit" maxlength="32" autocapitalize="words"
+           style="padding:8px 12px;border-radius:10px;border:1px solid var(--rl);background:var(--cd);max-width:160px;font-family:inherit">
+  </div>
+
+  <div class="sheet-row">
+    <div>
+      <div class="lbl">English pronunciation hints</div>
+      <div class="sub-lbl">Spanish-readable spelling under English text</div>
+    </div>
+    <button class="toggle" id="en-ph-toggle" aria-label="Toggle English phonetic"></button>
+  </div>
+
+  <div class="sheet-row">
+    <div>
       <div class="lbl">Voice speed</div>
       <div class="sub-lbl">Slower is better for learning</div>
     </div>
@@ -457,6 +475,26 @@
     <div class="lbl">About</div>
     <div class="sub-lbl">Cotidiano v1 · Built for Stu · No accounts, no tracking. Everything saved on this device.</div>
   </div>
+</div>
+
+<!-- First-launch onboarding: ask the user's name -->
+<div class="backdrop" id="name-backdrop"></div>
+<div class="sheet name-sheet" id="name-sheet">
+  <div class="sheet-handle"></div>
+  <h2>¡Bienvenido!</h2>
+  <p style="color:var(--mu);margin-bottom:18px;line-height:1.5">
+    Welcome to <strong>Cotidiano</strong> — a daily Spanish companion for life with Stephania and her family.<br><br>
+    What should we call you?
+  </p>
+  <input type="text" id="name-input" placeholder="Your name" maxlength="32"
+         autocapitalize="words" autocomplete="given-name"
+         style="width:100%;padding:14px 16px;border-radius:14px;border:1px solid var(--rl);background:var(--cd);font-size:1.05rem;font-family:inherit;margin-bottom:14px">
+  <button id="name-save" class="act primary" style="width:100%;justify-content:center;padding:14px;font-size:1rem">
+    <span>Continue</span>
+  </button>
+  <p style="color:var(--mu);font-size:0.8rem;margin-top:14px;text-align:center">
+    Stored on this device only — no accounts, no tracking.
+  </p>
 </div>
 
 <script src="./data.js"></script>

@@ -10,11 +10,13 @@ const defaultState = {
   practice: {},       // phraseId -> { dueAt: ms, interval: days, ease: 2.5, reps: int }
   customPhrases: [],  // [{ en, es, ph, note, createdAt }]
   settings: {
+    userName: '',     // asked on first launch, used in the greeting
     speed: 0.85,
     voice: 'auto',
     hideLearned: false,
     phoneticFirst: false,
-    direction: 'en-es', // 'en-es' = English prompt, Spanish answer · 'es-en' = reversed
+    showEnPhonetic: true, // show Spanish-readable English pronunciation under English
+    direction: 'en-es',   // 'en-es' = English prompt, Spanish answer · 'es-en' = reversed
   },
 };
 
@@ -172,7 +174,7 @@ function suggestForTime() {
 
 function renderHome() {
   const g = greetingForTime();
-  el('greet-h1').textContent = `${g.greet}, Stu`;
+  el('greet-h1').textContent = `${g.greet}, ${state.settings.userName || 'amigo'}`;
   el('greet-hint').textContent = g.hint;
   el('streak-num').textContent = state.streakDays;
 
@@ -428,27 +430,33 @@ function renderPhraseCard(p) {
   const isLearned = !!state.learned[id];
   const phonFirst = state.settings.phoneticFirst;
   const esFirst = state.settings.direction === 'es-en';
+  const showEnPh = state.settings.showEnPhonetic !== false;
+  const enPh = showEnPh ? enPhonetic(p.en) : '';
+  const enPhHtml = enPh ? `<div class="ph en-ph">${enPh}</div>` : '';
   const noteHtml = p.note ? `<div class="note">${p.note}</div>` : '';
   const hasVoice = !!voiceBankIndex[id];
 
   // Render order depends on direction
   let body;
   if (esFirst) {
-    // Spanish-first: large Spanish on top, phonetic, English smaller below
+    // Spanish-first: large Spanish on top, phonetic, English smaller below + en-phonetic for ES speakers
     body = `
       <div class="es">${p.es}</div>
       <div class="ph">${p.ph}</div>
       <div class="en" style="margin-top:8px">${p.en}</div>
+      ${enPhHtml}
     `;
   } else if (phonFirst) {
     body = `
       <div class="en">${p.en}</div>
+      ${enPhHtml}
       <div class="ph" style="font-size:1.3rem;margin-bottom:8px">${p.ph}</div>
       <div class="es" style="font-size:1.15rem;color:var(--mu)">${p.es}</div>
     `;
   } else {
     body = `
       <div class="en">${p.en}</div>
+      ${enPhHtml}
       <div class="es">${p.es}</div>
       <div class="ph">${p.ph}</div>
     `;
@@ -653,13 +661,69 @@ function bindSettings() {
     state.settings.phoneticFirst = !state.settings.phoneticFirst;
     pf.classList.toggle('on'); saveState();
   });
+  // Your name (editable from settings)
+  const nameInput = el('name-edit');
+  if (nameInput) {
+    nameInput.value = state.settings.userName || '';
+    nameInput.addEventListener('input', (e) => {
+      state.settings.userName = e.target.value.trim();
+      saveState();
+      if (document.getElementById('greet-h1')) {
+        const g = greetingForTime();
+        el('greet-h1').textContent = `${g.greet}, ${state.settings.userName || 'amigo'}`;
+      }
+    });
+  }
+  // English-phonetic toggle
+  const enph = el('en-ph-toggle');
+  if (enph) {
+    if (state.settings.showEnPhonetic !== false) enph.classList.add('on');
+    enph.addEventListener('click', () => {
+      state.settings.showEnPhonetic = !state.settings.showEnPhonetic;
+      enph.classList.toggle('on');
+      saveState();
+      refreshCurrentView();
+    });
+  }
   el('reset-btn').addEventListener('click', () => {
-    if (!confirm('Reset everything? This clears favorites, learned status, and streak.')) return;
-    state = { ...defaultState };
+    if (!confirm('Reset everything? This clears favorites, learned status, streak, and your name.')) return;
+    state = JSON.parse(JSON.stringify(defaultState));
     saveState();
     closeSheet();
+    // Re-prompt for name on next interaction
+    setTimeout(maybeAskName, 200);
     setTab('home');
   });
+}
+
+// ── First-launch name prompt ─────────────────────────────
+function maybeAskName() {
+  if (state.settings.userName) return;
+  const sheet = el('name-sheet');
+  const back  = el('name-backdrop');
+  const input = el('name-input');
+  const save  = el('name-save');
+  if (!sheet || !back || !input || !save) return;
+  back.classList.add('open');
+  sheet.classList.add('open');
+  setTimeout(() => input.focus(), 250);
+
+  const commit = () => {
+    const v = (input.value || '').trim();
+    if (!v) { input.focus(); return; }
+    state.settings.userName = v;
+    saveState();
+    sheet.classList.remove('open');
+    back.classList.remove('open');
+    // Refresh greeting + reflect in settings sheet
+    const ne = el('name-edit'); if (ne) ne.value = v;
+    if (document.getElementById('greet-h1')) {
+      const g = greetingForTime();
+      el('greet-h1').textContent = `${g.greet}, ${v}`;
+    }
+  };
+  save.onclick = commit;
+  input.onkeydown = (e) => { if (e.key === 'Enter') commit(); };
 }
 
 // ════════════════════════════════════════════════════════════
@@ -835,6 +899,13 @@ function showPracticeCard() {
     el('practice-back-ph').textContent = p.ph;
     el('practice-back-en').textContent = p.en;
   }
+  // English phonetic for whoever needs to read English aloud
+  const enphEl = el('practice-back-enph');
+  if (enphEl) {
+    const enPh = state.settings.showEnPhonetic !== false ? enPhonetic(p.en) : '';
+    enphEl.textContent = enPh;
+    enphEl.style.display = enPh ? '' : 'none';
+  }
   document.querySelector('.practice-front').style.display = '';
   document.querySelector('.practice-back').style.display = 'none';
   el('practice-actions').style.display = 'none';
@@ -899,6 +970,169 @@ function spanishToPhonetic(text) {
     if (/^[\s—–…]*$/.test(part)) return part;
     return part.replace(/[\w'áéíóúñüÁÉÍÓÚÑÜ]+/giu, (word) => phoneticWord(word.toLowerCase()));
   }).join('');
+}
+
+// ── English → Spanish-readable phonetic ──────────────────
+// So a Spanish speaker (Stephania, family) can read English aloud correctly.
+// Uses a dictionary of high-frequency words + a fallback rule engine.
+const EN_OVERRIDES = {
+  // pronouns / articles
+  "i":"ai","a":"ei","an":"an","the":"de","this":"dis","that":"dat","these":"dis","those":"dous",
+  "you":"iu","your":"ior","yours":"iors","he":"ji","she":"shi","it":"it","we":"ui","they":"dei",
+  "me":"mi","my":"mai","mine":"main","him":"jim","his":"jis","her":"jer","us":"as","them":"dem","their":"der","theirs":"ders",
+  // be / have / do / modals
+  "am":"em","is":"is","are":"ar","was":"uos","were":"uer","be":"bi","been":"bin","being":"biing",
+  "have":"jav","has":"jas","had":"jad","having":"javing",
+  "do":"du","does":"dos","did":"did","doing":"duing","done":"don",
+  "can":"ken","could":"cud","will":"uil","would":"uud","should":"shud","may":"mei","might":"mait","must":"most",
+  "shall":"shal","ought":"ot",
+  // common verbs
+  "go":"gou","goes":"gous","going":"gouing","gone":"gon","went":"uent",
+  "come":"com","comes":"coms","coming":"coming","came":"keim",
+  "see":"si","saw":"so","seen":"sin","seeing":"siing","look":"luk","looks":"luks","looked":"lukd","looking":"luking",
+  "make":"meik","makes":"meiks","made":"meid","making":"meiking",
+  "take":"teik","takes":"teiks","took":"tuk","taken":"teiken","taking":"teiking",
+  "get":"guet","gets":"guets","got":"got","getting":"gueting",
+  "give":"guiv","gives":"guivs","gave":"gueiv","given":"guiven","giving":"guiving",
+  "know":"nou","knows":"nous","knew":"niu","known":"noun","knowing":"nouing",
+  "think":"zink","thinks":"zinks","thought":"zot","thinking":"zinking",
+  "say":"sei","says":"ses","said":"sed","saying":"seiing",
+  "tell":"tel","tells":"tels","told":"tould","telling":"teling",
+  "want":"uant","wants":"uants","wanted":"uanted","wanting":"uanting",
+  "need":"nid","needs":"nids","needed":"nided","needing":"niding",
+  "love":"lov","loves":"lovs","loved":"lovd","loving":"loving",
+  "like":"laik","likes":"laiks","liked":"laikd","liking":"laiking",
+  "try":"trai","tries":"trais","tried":"traid","trying":"traiing",
+  "use":"ius","uses":"iuses","used":"iusd","using":"iusing",
+  "work":"uork","works":"uorks","worked":"uorkd","working":"uorking",
+  "play":"plei","plays":"pleis","played":"pleid","playing":"pleiing",
+  "eat":"it","eats":"its","ate":"eit","eaten":"iten","eating":"iting",
+  "drink":"drink","drinks":"drinks","drank":"drenk","drinking":"drinking",
+  "sleep":"slip","sleeps":"slips","slept":"slept","sleeping":"sliping",
+  "wake":"ueik","wakes":"ueiks","woke":"uouk","waking":"ueiking",
+  "open":"oupen","close":"clous","start":"start","stop":"stop","help":"jelp",
+  "ask":"ask","answer":"anser","call":"col","read":"rid","write":"rait","wrote":"rout","written":"riten",
+  "hear":"jir","heard":"jerd","hearing":"jiring","listen":"lisen",
+  "speak":"spik","spoke":"spouk","spoken":"spouken","speaking":"spiking","talk":"tok","talks":"toks","talked":"tokd","talking":"toking",
+  "show":"shou","shows":"shous","showed":"shoud","shown":"shoun",
+  "find":"faind","finds":"fainds","found":"faund","finding":"fainding",
+  "feel":"fil","feels":"fils","felt":"felt","feeling":"filing",
+  "leave":"liv","leaves":"livs","left":"left","leaving":"living",
+  "let":"let","lets":"lets","letting":"leting",
+  "put":"put","puts":"puts","putting":"puting",
+  "keep":"kip","keeps":"kips","kept":"kept","keeping":"kiping",
+  "bring":"bring","brings":"brings","brought":"brot","bringing":"bringing",
+  "buy":"bai","buys":"bais","bought":"bot","buying":"baiing",
+  "pay":"pei","pays":"peis","paid":"peid","paying":"peiing",
+  "hold":"jould","holds":"joulds","held":"jeld","holding":"joulding",
+  "run":"ron","runs":"rons","ran":"ren","running":"roning",
+  "walk":"uok","walks":"uoks","walked":"uokd","walking":"uoking",
+  "stand":"stend","sit":"sit","sits":"sits","sat":"set","sitting":"siting",
+  "live":"liv","lives":"livs","lived":"livd","living":"living",
+  "die":"dai","died":"daid","dying":"daiing",
+  // questions / connectors
+  "what":"uat","when":"uen","where":"uer","why":"uai","who":"ju","whom":"jum","whose":"jus","which":"uich","how":"jau",
+  "and":"end","or":"or","but":"bot","so":"sou","if":"if","then":"den","than":"den","because":"bicos","while":"uail",
+  "as":"as","at":"at","by":"bai","for":"for","from":"from","in":"in","into":"intu","of":"ov","off":"of",
+  "on":"on","onto":"ontu","out":"aut","over":"ouver","through":"zru","to":"tu","under":"onder","up":"op","upon":"opon","with":"uid","without":"uidaut",
+  "about":"abaut","again":"aguen","against":"aguenst","before":"bifor","after":"after","between":"bituin",
+  "yes":"ies","no":"nou","not":"not","never":"never","always":"olueis","sometimes":"somtaims",
+  "ok":"okei","okay":"okei","please":"plis","thanks":"zenks","thank":"zenk","sorry":"sori",
+  "hello":"jelou","hi":"jai","bye":"bai","goodbye":"gud-bai",
+  // numbers
+  "one":"uan","two":"tu","three":"zri","four":"for","five":"faiv","six":"siks","seven":"seven","eight":"eit","nine":"nain","ten":"ten",
+  "eleven":"ileven","twelve":"tuelv","thirteen":"zertin","twenty":"tuenti","thirty":"zerti","fifty":"fifti","hundred":"jondred","thousand":"zausend","million":"milion",
+  "first":"ferst","second":"sekend","third":"zerd",
+  // time / days
+  "today":"tudei","tomorrow":"tumorou","yesterday":"iesterdei","now":"nau","later":"leiter","soon":"sun",
+  "morning":"morning","afternoon":"afternun","evening":"ivning","night":"nait","noon":"nun","midnight":"mid-nait",
+  "monday":"mondei","tuesday":"tiusdei","wednesday":"uensdei","thursday":"zersdei","friday":"fraidei","saturday":"saterdei","sunday":"sondei",
+  "minute":"minit","minutes":"minits","hour":"auer","hours":"auers","day":"dei","days":"deis","week":"uik","year":"ier","years":"iers",
+  // family / people
+  "kids":"kids","kid":"kid","child":"chaild","children":"children","baby":"beibi","mom":"mom","mommy":"momi","dad":"ded","daddy":"dedi",
+  "wife":"uaif","husband":"jasbend","family":"femili","friend":"frend","friends":"frends","people":"pipol","person":"person",
+  "name":"neim","stephania":"steh-fa-NIA",
+  // common nouns
+  "water":"uater","food":"fud","coffee":"kofi","tea":"ti","bread":"bred","milk":"milk","juice":"yus","beer":"bier",
+  "house":"jaus","home":"joum","school":"skul","work":"uork","car":"kar","bus":"bos","taxi":"taksi",
+  "phone":"foun","money":"moni","time":"taim","place":"pleis","thing":"zing","things":"zings",
+  // common adjectives
+  "good":"gud","great":"greit","nice":"nais","fine":"fain","big":"big","small":"smol","new":"niu","old":"old",
+  "happy":"japi","sad":"sed","tired":"taird","hungry":"jongri","thirsty":"zersti","busy":"bisi","ready":"redi","sure":"shur",
+  "hot":"jot","cold":"could","warm":"uorm","right":"rait","wrong":"rong","easy":"isi","hard":"jard",
+  "more":"mor","less":"les","much":"moch","many":"meni","few":"fiu","little":"litel","every":"evri","all":"ol","some":"som","any":"eni",
+  "very":"veri","really":"rili","just":"yost","also":"olsou","too":"tu","only":"onli","still":"stil","yet":"iet",
+  "happy birthday":"japi BORDEI","birthday":"BORDEI",
+  // courtesy
+  "excuse":"eksquius","welcome":"uelcom","cheers":"chirs",
+};
+
+function enPhonetic(text) {
+  if (!text) return '';
+  // Walk the string, transforming each English word, keeping spaces and punctuation.
+  return text.replace(/[A-Za-z][A-Za-z']*/g, (word) => enPhoneticWord(word));
+}
+
+function enPhoneticWord(word) {
+  const isAllCaps = word.length > 1 && word === word.toUpperCase();
+  const startsCap = /^[A-Z]/.test(word);
+  let key = word.toLowerCase().replace(/[\u2019']/g, '');
+  // Strip a contraction tail for the lookup but preserve in output
+  // (e.g., "don't" → look up "dont" → "dont")
+  let out;
+  if (EN_OVERRIDES[key]) {
+    out = EN_OVERRIDES[key];
+  } else {
+    out = applyEnRules(word.toLowerCase());
+  }
+  if (isAllCaps) return out.toUpperCase();
+  if (startsCap)  return out.charAt(0).toUpperCase() + out.slice(1);
+  return out;
+}
+
+// Heuristic English → Spanish-readable transcription. Imperfect but readable.
+function applyEnRules(w) {
+  // Order matters — multi-letter patterns first.
+  const rules = [
+    // common endings
+    [/tion\b/g, 'shon'],   [/sion\b/g, 'shon'],
+    [/cious\b/g, 'shes'],  [/tious\b/g, 'shes'],
+    [/ould\b/g, 'ud'],     [/ought\b/g, 'ot'],   [/aught\b/g, 'ot'],
+    [/eigh/g, 'ei'],       [/igh/g, 'ai'],
+    // digraphs
+    [/tch/g, 'ch'],        [/dge/g, 'y'],
+    [/wh/g, 'u'],          [/wr/g, 'r'],         [/kn/g, 'n'],
+    [/ph/g, 'f'],          [/ck/g, 'k'],         [/qu/g, 'cu'],
+    [/sh/g, 'sh'],         [/ch/g, 'ch'],
+    [/th/g, 'd'],          // imperfect: voiced/unvoiced both → 'd'
+    [/ng\b/g, 'ng'],
+    // vowel teams
+    [/ee/g, 'i'],   [/ea/g, 'i'],
+    [/oo/g, 'u'],   [/ou/g, 'au'], [/ow\b/g, 'au'], [/ow/g, 'ou'],
+    [/ai/g, 'ei'],  [/ay/g, 'ei'],
+    [/oi/g, 'oi'],  [/oy/g, 'oi'],
+    [/oa/g, 'ou'],  [/ie\b/g, 'ai'],
+    // r-controlled
+    [/are\b/g, 'er'], [/ar\b/g, 'ar'], [/er\b/g, 'er'], [/ir\b/g, 'er'],
+    [/or\b/g, 'or'],  [/ur\b/g, 'er'],
+    // single letters
+    [/h/g, 'j'],     // hello → jelou
+    [/j/g, 'y'],     // jam → yam
+    [/y\b/g, 'i'],   // happy → japi
+    [/y(?=[aeiou])/g, 'i'],
+    [/v/g, 'b'],     // Spanish v ≈ b
+    [/z/g, 's'],     // LatAm
+    [/c(?=[ei])/g, 's'],
+    [/c/g, 'k'],
+    [/x/g, 'ks'],
+    [/w/g, 'u'],
+    // silent trailing e after consonant
+    [/([bcdfgklmnprstvxy])e\b/g, '$1'],
+    // collapse English doubled consonants (Spanish doesn't double)
+    [/([bcdfgklmnprstv])\1/g, '$1'],
+  ];
+  for (const [pat, rep] of rules) w = w.replace(pat, rep);
+  return w;
 }
 
 function phoneticWord(word) {
@@ -1897,6 +2131,9 @@ async function boot() {
   });
 
   renderHome();
+
+  // First-launch onboarding (after the home view is ready, so the greeting refreshes cleanly)
+  maybeAskName();
 }
 
 document.addEventListener('DOMContentLoaded', boot);

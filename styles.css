@@ -199,6 +199,25 @@ header.top {
   font-size: 1rem; color: var(--ac); font-weight: 600;
   letter-spacing: 0.01em; margin-bottom: 14px;
 }
+/* English phonetic — for Spanish speakers reading English aloud */
+.phrase .ph.en-ph {
+  font-size: 0.85rem;
+  color: var(--mu);
+  font-weight: 500;
+  margin-top: -2px;
+  margin-bottom: 12px;
+  font-style: italic;
+}
+.practice-back-enph {
+  font-family: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  color: var(--mu);
+  font-style: italic;
+  margin-top: 4px;
+  letter-spacing: 0.01em;
+}
+.name-sheet { z-index: 60; }
+.name-sheet input:focus { outline: 2px solid var(--ac); outline-offset: 1px; }
 .phrase .note {
   font-size: 0.84rem; color: var(--mu);
   margin-top: -4px; margin-bottom: 14px;
