@@ -9,6 +9,7 @@ const defaultState = {
   lastVisit: null,
   practice: {},       // phraseId -> { dueAt: ms, interval: days, ease: 2.5, reps: int }
   customPhrases: [],  // [{ en, es, ph, note, createdAt }]
+  captures: [],       // [{ id, ts, transcript, translation, speaker, note, linkedPhraseId, timesHeard }]
   settings: {
     userName: '',     // asked on first launch, used in the greeting
     speed: 0.85,
@@ -196,6 +197,9 @@ function renderHome() {
   // Birthdays widget
   renderBirthdaysBox();
 
+  // "Heard at home" card — shows recent captures with deep link to feed
+  renderCapturesHomeCard();
+
   // Practice CTA — show count due
   el('due-count').textContent = countDuePhrases();
 
@@ -332,6 +336,65 @@ function renderBirthdaysBox() {
   });
 }
 
+function renderCapturesHomeCard() {
+  const box = el('captures-card');
+  if (!box) return;
+  const list = (state.captures || []).slice().sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  if (!list.length) {
+    box.innerHTML = `
+      <div class="captures-home empty-state">
+        <div class="captures-home-head">
+          <span class="captures-home-eyebrow">Heard at home</span>
+          <span class="captures-home-hint">Live notebook</span>
+        </div>
+        <div class="captures-home-body">
+          <p>Tap the floating mic button when Stephania, the kids, or family say something you want to remember. The app records 30s, transcribes the Spanish, and saves it forever.</p>
+        </div>
+      </div>
+    `;
+    return;
+  }
+  const recent = list.slice(0, 3);
+  const items = recent.map((c) => {
+    const sp = CAPTURE_SPEAKERS.find((s) => s.id === c.speaker) || { emoji: '🗣', label: 'Other' };
+    const when = formatCaptureRelative(c.ts);
+    return `
+      <div class="captures-home-item">
+        <div class="captures-home-meta">${sp.emoji} ${sp.label} · ${when}</div>
+        <div class="captures-home-es">${escapeHtml(c.transcript)}</div>
+      </div>
+    `;
+  }).join('');
+  const more = list.length > 3 ? `<button class="captures-home-more" id="captures-card-cta">View all ${list.length} →</button>`
+                               : `<button class="captures-home-more" id="captures-card-cta">View feed →</button>`;
+  box.innerHTML = `
+    <div class="captures-home">
+      <div class="captures-home-head">
+        <span class="captures-home-eyebrow">Heard at home</span>
+        <span class="captures-home-hint">${list.length} captured</span>
+      </div>
+      <div class="captures-home-body">
+        ${items}
+      </div>
+      ${more}
+    </div>
+  `;
+  const cta = el('captures-card-cta');
+  if (cta) cta.addEventListener('click', () => { showView('captures'); renderCapturesFeed(); });
+}
+
+function formatCaptureRelative(ts) {
+  const diff = Date.now() - ts;
+  const mins = Math.round(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return hrs + 'h ago';
+  const days = Math.round(hrs / 24);
+  if (days < 7) return days + 'd ago';
+  return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 function renderAllGroups() {
   const container = el('all-groups');
   const order = ['daily', 'personal', 'work', 'extra', 'out', 'parenting', 'culture', 'family', 'kids', 'custom'];
@@ -462,9 +525,13 @@ function renderPhraseCard(p) {
     `;
   }
 
+  // Register variants — same phrase, different register/audience
+  const registerHtml = renderRegisterChips(id);
+
   return `
     <div class="phrase ${isLearned ? 'learned' : ''}" data-id="${id}">
       ${body}
+      ${registerHtml}
       ${noteHtml}
       <div class="phrase-actions">
         <button class="act primary play">${ICONS.play}<span>Play</span></button>
@@ -478,12 +545,79 @@ function renderPhraseCard(p) {
   `;
 }
 
+function getRegisterVariants(phraseId) {
+  if (typeof window !== 'undefined' && window.REGISTER_VARIANTS) {
+    return window.REGISTER_VARIANTS[phraseId] || null;
+  }
+  return null;
+}
+
+function renderRegisterChips(phraseId) {
+  const variants = getRegisterVariants(phraseId);
+  if (!variants || !variants.length) return '';
+  const chips = variants.map((v, i) => {
+    const reg = v.reg || 'casual';
+    return `<button type="button" class="register-chip" data-reg="${reg}" data-vi="${i}">${escapeHtml(v.label)}</button>`;
+  }).join('');
+  return `
+    <div class="register-chips" data-pid="${phraseId}">
+      <button type="button" class="register-chip active" data-reg="default" data-vi="-1">📋 default</button>
+      ${chips}
+    </div>
+    <div class="register-when" data-for="${phraseId}" style="display:none"></div>
+  `;
+}
+
+function attachRegisterEvents(card) {
+  const chipsEl = card.querySelector('.register-chips');
+  if (!chipsEl) return;
+  const phraseId = chipsEl.dataset.pid;
+  const variants = getRegisterVariants(phraseId);
+  if (!variants) return;
+  const esEl = card.querySelector('.es');
+  const phEl = card.querySelector('.ph:not(.en-ph)');
+  const whenEl = card.querySelector(`.register-when[data-for="${phraseId}"]`);
+  // Save originals so we can restore on "default"
+  const origEs = esEl ? esEl.textContent : '';
+  const origPh = phEl ? phEl.textContent : '';
+
+  chipsEl.querySelectorAll('.register-chip').forEach((chip) => {
+    chip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      chipsEl.querySelectorAll('.register-chip').forEach((c) => c.classList.remove('active'));
+      chip.classList.add('active');
+      const idx = parseInt(chip.dataset.vi, 10);
+      let activeEs, activePh;
+      if (idx < 0) {
+        activeEs = origEs; activePh = origPh;
+        if (whenEl) whenEl.style.display = 'none';
+      } else {
+        const v = variants[idx];
+        activeEs = v.es; activePh = v.ph;
+        if (esEl) esEl.textContent = v.es;
+        if (phEl) phEl.textContent = v.ph;
+        if (whenEl) {
+          whenEl.textContent = v.when ? '“' + v.when + '”' : '';
+          whenEl.style.display = v.when ? '' : 'none';
+        }
+      }
+      if (esEl) esEl.textContent = activeEs;
+      if (phEl) phEl.textContent = activePh;
+      // Speak the active variant immediately so the user hears the difference
+      speak(activeEs, { btn: chip });
+      // Stash on the card so play/slow buttons use the active variant
+      card.dataset.activeEs = activeEs;
+    });
+  });
+}
+
 function attachPhraseEvents(container) {
   container.querySelectorAll('.phrase').forEach((card) => {
     const id = card.dataset.id;
     const allP = allPhrases();
     const phrase = allP.find((p) => p._id === id);
     if (!phrase) return;
+    attachRegisterEvents(card);
     const playBtn = card.querySelector('.play');
     const slowBtn = card.querySelector('.slow');
     const tryBtn = card.querySelector('.try');
@@ -491,24 +625,27 @@ function attachPhraseEvents(container) {
     const starBtn = card.querySelector('.star');
     const checkBtn = card.querySelector('.check');
 
+    const activeText = () => card.dataset.activeEs || phrase.es;
     const playPhrase = (slow = false) => {
-      // If family voice exists, play that instead of TTS
-      if (voiceBankIndex[id] && !slow) {
+      const text = activeText();
+      // Family voice only plays for the original phrase, not register variants
+      if (voiceBankIndex[id] && !slow && text === phrase.es) {
         playFamilyVoice(id, playBtn);
       } else {
-        speak(phrase.es, { btn: playBtn, slow });
+        speak(text, { btn: playBtn, slow });
       }
     };
 
     playBtn.addEventListener('click', () => playPhrase(false));
-    slowBtn.addEventListener('click', () => speak(phrase.es, { btn: slowBtn, slow: true }));
+    slowBtn.addEventListener('click', () => speak(activeText(), { btn: slowBtn, slow: true }));
 
     if (tryBtn) tryBtn.addEventListener('click', () => openCoach(phrase));
     if (vbBtn) vbBtn.addEventListener('click', () => openVoiceBank(phrase));
 
-    // Tap card body (not buttons) = play
+    // Tap card body (not buttons or chips) = play
     card.addEventListener('click', (e) => {
       if (e.target.closest('.phrase-actions')) return;
+      if (e.target.closest('.register-chips')) return;
       playPhrase(false);
     });
 
@@ -533,14 +670,17 @@ function attachPhraseEvents(container) {
 
 // ── Views ──────────────────────────────────────────────────
 function showView(name) {
-  const views = ['home', 'list', 'search', 'favorites', 'practice', 'add', 'live'];
+  const views = ['home', 'list', 'search', 'favorites', 'practice', 'add', 'live', 'captures'];
   views.forEach((v) => {
     const node = el('view-' + v);
     if (node) node.style.display = v === name ? '' : 'none';
   });
   // Hide stuck FAB inside Live view (it's redundant there)
-  const fab = el('stuck-fab');
-  if (fab) fab.style.display = name === 'live' ? 'none' : '';
+  const stuckFab = el('stuck-fab');
+  if (stuckFab) stuckFab.style.display = name === 'live' ? 'none' : '';
+  // Capture FAB visible everywhere except inside the Capture sheet itself
+  const capFab = el('cap-fab');
+  if (capFab) capFab.style.display = name === 'live' ? 'none' : '';
 }
 
 // ── Search ─────────────────────────────────────────────────
@@ -1818,11 +1958,15 @@ let vbBlobUrl = null;
 
 function openVoiceBankDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('cotidiano-voices', 1);
+    const req = indexedDB.open('cotidiano-voices', 2);
     req.onupgradeneeded = (e) => {
       const dbb = e.target.result;
       if (!dbb.objectStoreNames.contains('voices')) {
         dbb.createObjectStore('voices', { keyPath: 'id' });
+      }
+      if (!dbb.objectStoreNames.contains('captures')) {
+        // Capture audio blobs from "Heard at home" feature
+        dbb.createObjectStore('captures', { keyPath: 'id' });
       }
     };
     req.onsuccess = (e) => { db = e.target.result; resolve(db); };
@@ -1993,6 +2137,496 @@ function bindVoiceBank() {
 }
 
 // ════════════════════════════════════════════════════════════
+//  FEATURE 4½ — CAPTURE & GROW ("Heard at home")
+// ════════════════════════════════════════════════════════════
+//
+// Press the floating mic, record up to 30s of ambient Spanish, the app
+// transcribes via Web Speech API, and you save the snippet — audio +
+// transcript + speaker — to a personal feed. Captured phrases are
+// auto-linked to the corpus when they fuzzy-match an existing phrase
+// and otherwise become standalone entries you can review and practice.
+//
+// Audio lives in IndexedDB (`captures` store); metadata lives in
+// state.captures so it survives across devices via export/import later.
+
+const CAPTURE_SPEAKERS = [
+  { id: 'stephania', label: 'Stephania', emoji: '💗' },
+  { id: 'belen',     label: 'Belén',     emoji: '👧' },
+  { id: 'paz',       label: 'Paz',       emoji: '🧒' },
+  { id: 'marito',    label: 'Marito',    emoji: '👦' },
+  { id: 'suegra',    label: 'Suegra',    emoji: '👵' },
+  { id: 'suegro',    label: 'Suegro',    emoji: '👴' },
+  { id: 'family',    label: 'Family',    emoji: '👨‍👩‍👧' },
+  { id: 'other',     label: 'Other',     emoji: '🗣' },
+];
+const CAPTURE_MAX_MS = 30000;
+
+let capRec = null;          // SpeechRecognition
+let capRecorder = null;     // MediaRecorder
+let capChunks = [];
+let capStream = null;
+let capStartedAt = 0;
+let capTimer = null;
+let capInterimText = '';
+let capFinalText = '';
+let capPendingBlob = null;
+let capPendingId = null;
+let capPlayUrl = null;
+
+function openCapture() {
+  // Reset any previous state, open the sheet, and start recording immediately.
+  capInterimText = '';
+  capFinalText = '';
+  capPendingBlob = null;
+  capPendingId = 'cap_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  if (capPlayUrl) { URL.revokeObjectURL(capPlayUrl); capPlayUrl = null; }
+  el('cap-transcript').value = '';
+  el('cap-translation').value = '';
+  el('cap-note').value = '';
+  el('cap-match').innerHTML = '';
+  el('cap-match').style.display = 'none';
+  el('cap-playback').style.display = 'none';
+  el('cap-save').disabled = true;
+  // Default speaker = Stephania
+  setCaptureSpeaker('stephania');
+
+  el('cap-backdrop').classList.add('open');
+  el('cap-sheet').classList.add('open');
+  startCaptureRec();
+}
+
+function closeCapture() {
+  stopCaptureRec(true);
+  el('cap-backdrop').classList.remove('open');
+  el('cap-sheet').classList.remove('open');
+  if (capPlayUrl) { URL.revokeObjectURL(capPlayUrl); capPlayUrl = null; }
+}
+
+function setCaptureSpeaker(id) {
+  document.querySelectorAll('.cap-speaker').forEach((b) => {
+    b.classList.toggle('active', b.dataset.speaker === id);
+  });
+}
+function getCaptureSpeaker() {
+  const active = document.querySelector('.cap-speaker.active');
+  return active ? active.dataset.speaker : 'other';
+}
+
+function startCaptureRec() {
+  capStartedAt = Date.now();
+  el('cap-status').textContent = 'Listening… speak Spanish near the phone.';
+  el('cap-rec-btn').classList.add('recording');
+  el('cap-rec-btn').querySelector('.cap-rec-lbl').textContent = 'Stop';
+
+  // 1) Speech recognition (best-effort; works without audio recording too)
+  if (srSupported()) {
+    try {
+      capRec = createRecognition('es-MX', { continuous: true, interim: true });
+      capRec.onresult = (e) => {
+        let interim = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const r = e.results[i];
+          const t = r[0].transcript.trim();
+          if (!t) continue;
+          if (r.isFinal) {
+            capFinalText = (capFinalText + ' ' + t).trim();
+          } else {
+            interim += ' ' + t;
+          }
+        }
+        capInterimText = interim.trim();
+        const merged = (capFinalText + ' ' + capInterimText).trim();
+        el('cap-transcript').value = merged;
+      };
+      capRec.onerror = () => {};
+      capRec.onend = () => {
+        // Auto-restart while still recording (iOS ends sessions ~60s)
+        if (capRecorder && capRecorder.state === 'recording') {
+          try { capRec.start(); } catch {}
+        }
+      };
+      capRec.start();
+    } catch (err) { console.warn('Capture SR start failed:', err); }
+  } else {
+    el('cap-status').textContent = 'Voice transcription not supported here — type the phrase below.';
+  }
+
+  // 2) Audio recording — separate from SR so we always keep the source
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+  navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+    capStream = stream;
+    const mimeType = pickAudioMime();
+    try {
+      capRecorder = mimeType ? new MediaRecorder(stream, { mimeType })
+                             : new MediaRecorder(stream);
+    } catch (err) {
+      console.warn('MediaRecorder unavailable:', err);
+      return;
+    }
+    capChunks = [];
+    capRecorder.ondataavailable = (e) => { if (e.data && e.data.size) capChunks.push(e.data); };
+    capRecorder.onstop = () => {
+      const type = (capChunks[0] && capChunks[0].type) || mimeType || 'audio/webm';
+      capPendingBlob = new Blob(capChunks, { type });
+      capChunks = [];
+      if (capStream) { capStream.getTracks().forEach((t) => t.stop()); capStream = null; }
+      // Show playback control
+      if (capPlayUrl) URL.revokeObjectURL(capPlayUrl);
+      capPlayUrl = URL.createObjectURL(capPendingBlob);
+      el('cap-audio').src = capPlayUrl;
+      el('cap-playback').style.display = '';
+      el('cap-save').disabled = false;
+    };
+    capRecorder.start();
+    // Auto-stop after CAPTURE_MAX_MS
+    capTimer = setTimeout(() => {
+      if (capRecorder && capRecorder.state === 'recording') stopCaptureRec(false);
+    }, CAPTURE_MAX_MS);
+  }).catch((err) => {
+    console.warn('Mic permission denied:', err);
+    el('cap-status').textContent = 'Microphone permission denied — type the phrase below.';
+  });
+}
+
+function pickAudioMime() {
+  const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'];
+  for (const c of candidates) {
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(c)) return c;
+  }
+  return '';
+}
+
+function stopCaptureRec(discard) {
+  if (capTimer) { clearTimeout(capTimer); capTimer = null; }
+  if (capRec) { try { capRec.stop(); } catch {} capRec = null; }
+  if (capRecorder && capRecorder.state === 'recording') {
+    try { capRecorder.stop(); } catch {}
+  }
+  capRecorder = null;
+  if (capStream) { try { capStream.getTracks().forEach((t) => t.stop()); } catch {} capStream = null; }
+  el('cap-rec-btn').classList.remove('recording');
+  el('cap-rec-btn').querySelector('.cap-rec-lbl').textContent = 'Re-record';
+  if (!discard) {
+    el('cap-status').textContent = 'Stopped. Review and save below.';
+    // Auto-suggest a corpus match based on the transcript
+    suggestCaptureMatch();
+  }
+}
+
+function toggleCaptureRec() {
+  if (capRecorder && capRecorder.state === 'recording') {
+    stopCaptureRec(false);
+  } else {
+    // Re-record: clear and restart
+    capFinalText = '';
+    capInterimText = '';
+    capPendingBlob = null;
+    el('cap-playback').style.display = 'none';
+    el('cap-save').disabled = true;
+    el('cap-match').style.display = 'none';
+    startCaptureRec();
+  }
+}
+
+// Fuzzy-match a transcript to the existing corpus so you can link to it.
+function suggestCaptureMatch() {
+  const t = (el('cap-transcript').value || '').trim().toLowerCase();
+  const matchEl = el('cap-match');
+  if (!t || t.length < 3) { matchEl.style.display = 'none'; return; }
+  const norm = (s) => s.toLowerCase().replace(/[¿¡?!.,;:]/g, '').trim();
+  const target = norm(t);
+  const all = allPhrases();
+  let best = null, bestScore = 0;
+  for (const p of all) {
+    const cand = norm(p.es);
+    if (!cand) continue;
+    // Score: shared word ratio
+    const tWords = new Set(target.split(/\s+/));
+    const cWords = cand.split(/\s+/);
+    if (!cWords.length) continue;
+    let hits = 0;
+    for (const w of cWords) if (tWords.has(w)) hits++;
+    const score = hits / Math.max(cWords.length, tWords.size);
+    if (score > bestScore && score >= 0.6) { bestScore = score; best = p; }
+  }
+  if (best) {
+    matchEl.style.display = '';
+    matchEl.dataset.phraseId = best._id;
+    matchEl.innerHTML = `
+      <div class="cap-match-lbl">Looks like a phrase you've studied:</div>
+      <div class="cap-match-card">
+        <div class="cap-match-en">${escapeHtml(best.en)}</div>
+        <div class="cap-match-es">${escapeHtml(best.es)}</div>
+        <div class="cap-match-ph">${escapeHtml(best.ph)}</div>
+      </div>
+      <button class="act primary cap-match-link" type="button">Link to this phrase</button>
+    `;
+    const linkBtn = matchEl.querySelector('.cap-match-link');
+    linkBtn.addEventListener('click', () => {
+      matchEl.dataset.linked = 'true';
+      linkBtn.textContent = 'Linked ✓';
+      linkBtn.disabled = true;
+      // Pre-fill translation from the linked phrase
+      if (!el('cap-translation').value.trim()) {
+        el('cap-translation').value = best.en;
+      }
+    });
+  } else {
+    matchEl.style.display = 'none';
+  }
+}
+
+function saveCaptureBlob(id, blob) {
+  return new Promise((resolve, reject) => {
+    if (!db || !blob) return resolve();
+    const tx = db.transaction('captures', 'readwrite');
+    tx.objectStore('captures').put({ id, blob, savedAt: Date.now() });
+    tx.oncomplete = () => resolve();
+    tx.onerror = (e) => reject(e);
+  });
+}
+
+function loadCaptureBlob(id) {
+  return new Promise((resolve) => {
+    if (!db) return resolve(null);
+    const tx = db.transaction('captures', 'readonly');
+    const req = tx.objectStore('captures').get(id);
+    req.onsuccess = () => resolve(req.result ? req.result.blob : null);
+    req.onerror = () => resolve(null);
+  });
+}
+
+function deleteCaptureBlob(id) {
+  return new Promise((resolve) => {
+    if (!db) return resolve();
+    const tx = db.transaction('captures', 'readwrite');
+    tx.objectStore('captures').delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+  });
+}
+
+async function commitCapture() {
+  // Stop recording if still going
+  if (capRecorder && capRecorder.state === 'recording') stopCaptureRec(false);
+  const transcript = el('cap-transcript').value.trim();
+  if (!transcript) {
+    el('cap-status').textContent = 'Please type or record at least the Spanish phrase.';
+    return;
+  }
+  const translation = el('cap-translation').value.trim();
+  const note = el('cap-note').value.trim();
+  const speaker = getCaptureSpeaker();
+  const matchEl = el('cap-match');
+  const linkedPhraseId = matchEl.dataset.linked === 'true' ? matchEl.dataset.phraseId : null;
+
+  // Persist audio blob (if we got one) to IDB
+  if (capPendingBlob) {
+    try { await saveCaptureBlob(capPendingId, capPendingBlob); } catch (err) { console.warn(err); }
+  }
+
+  // De-dupe: if the same transcript already exists, just bump timesHeard
+  const existing = state.captures.find((c) => c.transcript.toLowerCase() === transcript.toLowerCase() && c.speaker === speaker);
+  if (existing) {
+    existing.timesHeard = (existing.timesHeard || 1) + 1;
+    existing.lastHeardTs = Date.now();
+    if (translation && !existing.translation) existing.translation = translation;
+    if (note && !existing.note) existing.note = note;
+    if (linkedPhraseId && !existing.linkedPhraseId) existing.linkedPhraseId = linkedPhraseId;
+    // Discard the new blob — we already have one
+    if (capPendingBlob) await deleteCaptureBlob(capPendingId);
+  } else {
+    state.captures.unshift({
+      id: capPendingId,
+      ts: Date.now(),
+      transcript,
+      translation,
+      speaker,
+      note,
+      linkedPhraseId,
+      timesHeard: 1,
+      hasAudio: !!capPendingBlob,
+    });
+  }
+  saveState();
+  closeCapture();
+  // If we're on home, refresh; if on captures view, refresh too
+  if (isVisible('view-home')) renderHome();
+  if (isVisible('view-captures')) renderCapturesFeed();
+}
+
+function isVisible(id) {
+  const node = document.getElementById(id);
+  return node && node.style.display !== 'none';
+}
+
+// ── "Heard at home" feed view ──────────────────────────────
+function renderCapturesFeed() {
+  const container = el('captures-list');
+  if (!container) return;
+  const list = (state.captures || []).slice().sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  if (!list.length) {
+    container.innerHTML = `
+      <div class="empty">
+        <h3>Nothing captured yet</h3>
+        <p>Tap the <strong>floating mic button</strong> when you hear Spanish you want to remember — Stephania, the kids, family at dinner. The app records ~30 seconds, transcribes, and saves it here forever.</p>
+      </div>
+    `;
+    return;
+  }
+  // Group by day for readability
+  const byDay = new Map();
+  for (const c of list) {
+    const d = new Date(c.ts);
+    const key = d.toISOString().slice(0, 10);
+    if (!byDay.has(key)) byDay.set(key, []);
+    byDay.get(key).push(c);
+  }
+  let html = '';
+  for (const [day, items] of byDay) {
+    const date = new Date(day);
+    const lbl = formatCaptureDay(date);
+    html += `<div class="cap-day-head">${lbl}</div>`;
+    for (const c of items) html += renderCaptureCard(c);
+  }
+  container.innerHTML = html;
+  attachCaptureCardEvents(container);
+}
+
+function formatCaptureDay(date) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const dCopy = new Date(date); dCopy.setHours(0,0,0,0);
+  const diff = Math.round((today - dCopy) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  if (diff < 7) return date.toLocaleDateString(undefined, { weekday: 'long' });
+  return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function renderCaptureCard(c) {
+  const sp = CAPTURE_SPEAKERS.find((s) => s.id === c.speaker) || CAPTURE_SPEAKERS[CAPTURE_SPEAKERS.length - 1];
+  const time = new Date(c.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const ph = spanishToPhonetic(c.transcript);
+  const heard = (c.timesHeard || 1) > 1 ? `<span class="cap-times">×${c.timesHeard}</span>` : '';
+  const linked = c.linkedPhraseId ? '<span class="cap-linked">in your deck</span>' : '';
+  const note = c.note ? `<div class="cap-note">${escapeHtml(c.note)}</div>` : '';
+  const en = c.translation ? `<div class="cap-en">${escapeHtml(c.translation)}</div>` : '';
+  return `
+    <div class="cap-card" data-id="${c.id}">
+      <div class="cap-card-head">
+        <span class="cap-speaker-tag">${sp.emoji} ${sp.label}</span>
+        <span class="cap-time">${time}</span>
+        ${heard}${linked}
+      </div>
+      <div class="cap-es">${escapeHtml(c.transcript)}</div>
+      <div class="cap-ph">${escapeHtml(ph)}</div>
+      ${en}
+      ${note}
+      <div class="cap-actions">
+        ${c.hasAudio ? `<button class="act cap-play">▶ Original audio</button>` : ''}
+        <button class="act cap-tts">🔊 TTS</button>
+        <button class="act cap-edit">Edit</button>
+        <button class="act cap-delete">Delete</button>
+      </div>
+    </div>
+  `;
+}
+
+function attachCaptureCardEvents(container) {
+  container.querySelectorAll('.cap-card').forEach((card) => {
+    const id = card.dataset.id;
+    const c = state.captures.find((x) => x.id === id);
+    if (!c) return;
+    const playBtn  = card.querySelector('.cap-play');
+    const ttsBtn   = card.querySelector('.cap-tts');
+    const editBtn  = card.querySelector('.cap-edit');
+    const delBtn   = card.querySelector('.cap-delete');
+    if (playBtn) playBtn.addEventListener('click', async () => {
+      const blob = await loadCaptureBlob(id);
+      if (!blob) { playBtn.textContent = '(audio missing)'; return; }
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      playBtn.classList.add('playing');
+      audio.onended = audio.onerror = () => { playBtn.classList.remove('playing'); URL.revokeObjectURL(url); };
+      audio.play();
+    });
+    if (ttsBtn) ttsBtn.addEventListener('click', () => speak(c.transcript, { btn: ttsBtn }));
+    if (editBtn) editBtn.addEventListener('click', () => openCaptureEditor(c));
+    if (delBtn)  delBtn.addEventListener('click', async () => {
+      if (!confirm('Delete this capture? The audio is also removed.')) return;
+      state.captures = state.captures.filter((x) => x.id !== id);
+      await deleteCaptureBlob(id);
+      saveState();
+      renderCapturesFeed();
+    });
+  });
+}
+
+function openCaptureEditor(c) {
+  // Reuse the capture sheet but in "edit" mode (no recording).
+  capPendingBlob = null;
+  capPendingId = c.id;
+  el('cap-transcript').value = c.transcript || '';
+  el('cap-translation').value = c.translation || '';
+  el('cap-note').value = c.note || '';
+  setCaptureSpeaker(c.speaker || 'other');
+  el('cap-match').style.display = 'none';
+  el('cap-playback').style.display = 'none';
+  el('cap-status').textContent = 'Editing capture from ' + new Date(c.ts).toLocaleString();
+  el('cap-rec-btn').classList.remove('recording');
+  el('cap-rec-btn').querySelector('.cap-rec-lbl').textContent = 'Re-record';
+  el('cap-save').disabled = false;
+  el('cap-backdrop').classList.add('open');
+  el('cap-sheet').classList.add('open');
+  // Save behavior: on save, mutate existing in place
+  el('cap-save').onclick = () => {
+    c.transcript = el('cap-transcript').value.trim();
+    c.translation = el('cap-translation').value.trim();
+    c.note = el('cap-note').value.trim();
+    c.speaker = getCaptureSpeaker();
+    saveState();
+    closeCapture();
+    renderCapturesFeed();
+    // Restore default click handler
+    el('cap-save').onclick = commitCapture;
+  };
+}
+
+function bindCapture() {
+  // Build speaker chips
+  const chips = el('cap-speakers');
+  if (chips) {
+    chips.innerHTML = CAPTURE_SPEAKERS.map((s) =>
+      `<button type="button" class="cap-speaker" data-speaker="${s.id}"><span>${s.emoji}</span> ${s.label}</button>`
+    ).join('');
+    chips.querySelectorAll('.cap-speaker').forEach((b) =>
+      b.addEventListener('click', () => setCaptureSpeaker(b.dataset.speaker)));
+  }
+  el('cap-fab').addEventListener('click', openCapture);
+  el('cap-close').addEventListener('click', closeCapture);
+  el('cap-backdrop').addEventListener('click', closeCapture);
+  el('cap-rec-btn').addEventListener('click', toggleCaptureRec);
+  el('cap-save').addEventListener('click', commitCapture);
+  el('cap-transcript').addEventListener('input', () => {
+    capFinalText = el('cap-transcript').value;
+    capInterimText = '';
+    suggestCaptureMatch();
+  });
+  // Home card "View all" + tab
+  const cardCta = el('captures-card-cta');
+  if (cardCta) cardCta.addEventListener('click', () => { showView('captures'); renderCapturesFeed(); });
+  const back = el('captures-back');
+  if (back) back.addEventListener('click', () => setTab('home'));
+}
+
+function captureSummaryForHome() {
+  const list = state.captures || [];
+  if (!list.length) return null;
+  const recent = list.slice(0, 3);
+  return { count: list.length, recent };
+}
+
+// ════════════════════════════════════════════════════════════
 //  FEATURE 5 — STUCK MODE (English in → Spanish out)
 // ════════════════════════════════════════════════════════════
 
@@ -2093,6 +2727,7 @@ async function boot() {
   bindMirror();
   bindVoiceBank();
   bindStuck();
+  bindCapture();
   // Load voice bank index
   try { await openVoiceBankDB(); await loadVoiceBankIndex(); } catch {}
 
