@@ -388,8 +388,9 @@ function renderBirthdaysBox() {
 function renderHeroPhrase() {
   const slot = el('hero-phrase');
   if (!slot) return;
+  slot.innerHTML = ''; // Clear first to ensure fresh render
   const hero = heroPhraseForToday();
-  if (!hero) { slot.innerHTML = ''; return; }
+  if (!hero) return;
   const ph = (typeof spanishToPhonetic === 'function') ? spanishToPhonetic(hero.es) : '';
   const esFirst = state.settings.direction === 'es-en';
   let body;
@@ -942,6 +943,7 @@ function bindSettings() {
   el('direction-select').value = state.settings.direction || 'en-es';
   el('direction-select').addEventListener('change', (e) => {
     state.settings.direction = e.target.value; saveState();
+    syncDirectionBtn();
     refreshCurrentView();
   });
   const ht = el('hide-learned-toggle');
