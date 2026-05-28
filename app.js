@@ -1074,19 +1074,23 @@ function enPhonetic(text) {
 }
 
 function enPhoneticWord(word) {
-  const isAllCaps = word.length > 1 && word === word.toUpperCase();
-  const startsCap = /^[A-Z]/.test(word);
-  let key = word.toLowerCase().replace(/[\u2019']/g, '');
-  // Strip a contraction tail for the lookup but preserve in output
-  // (e.g., "don't" → look up "dont" → "dont")
-  let out;
-  if (EN_OVERRIDES[key]) {
-    out = EN_OVERRIDES[key];
-  } else {
-    out = applyEnRules(word.toLowerCase());
+  const key = word.toLowerCase().replace(/[\u2019']/g, '');
+  // 1) CMU-derived dictionary (best quality — has stress markers)
+  if (typeof window !== 'undefined' && window.EN_DICT && window.EN_DICT[key]) {
+    return window.EN_DICT[key];
   }
-  if (isAllCaps) return out.toUpperCase();
-  if (startsCap)  return out.charAt(0).toUpperCase() + out.slice(1);
+  // 2) Hand-curated overrides for words not in CMUdict (Spanish names, etc.)
+  if (EN_OVERRIDES[key]) {
+    const out = EN_OVERRIDES[key];
+    if (/^[A-Z]/.test(word) && !/[A-Z]/.test(out)) {
+      return out.charAt(0).toUpperCase() + out.slice(1);
+    }
+    return out;
+  }
+  // 3) Heuristic rule engine for everything else (custom phrases, novel words)
+  const out = applyEnRules(word.toLowerCase());
+  if (word.length > 1 && word === word.toUpperCase()) return out.toUpperCase();
+  if (/^[A-Z]/.test(word)) return out.charAt(0).toUpperCase() + out.slice(1);
   return out;
 }
 

@@ -24,5 +24,9 @@ npm-debug.log*
 dist/
 build/
 
+# CMUdict download cache + diagnostic output for the en-phonetic build script
+scripts/cmudict.dict
+scripts/missing-words.txt
+
 # Local Netlify folder
 .netlify
