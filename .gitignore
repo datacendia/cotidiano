@@ -1,0 +1,28 @@
+# Cotidiano — gitignore for static PWA
+
+# Node.js (local dev tools)
+node_modules/
+package-lock.json
+package.json
+
+# Temporary files
+_verify.js
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Build artifacts (if we ever add a build step)
+dist/
+build/
+
+# Local Netlify folder
+.netlify

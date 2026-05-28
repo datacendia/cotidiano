@@ -1,0 +1,21 @@
+{
+  "name": "Cotidiano — Spanish for the Day",
+  "short_name": "Cotidiano",
+  "description": "Your everyday Spanish, spelled how it sounds. Built for Stuart.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#faf8f3",
+  "theme_color": "#8b1e1e",
+  "lang": "en",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["education", "lifestyle", "travel"]
+}

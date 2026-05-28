@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#8b1e1e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Cotidiano">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icon.svg">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+  <title>Cotidiano · Spanish for the Day</title>
+</head>
+<body>
+<div class="app">
+
+  <header class="top">
+    <div class="top-row">
+      <div class="brand">Cotidiano<span class="sub">Spanish · LATAM</span></div>
+      <div class="top-spacer"></div>
+      <button class="icon-btn dir-btn" id="btn-direction" aria-label="Flip translation direction">EN→ES</button>
+      <button class="icon-btn" id="btn-search" aria-label="Search"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></button>
+      <button class="icon-btn" id="btn-settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+    </div>
+    <div class="search-row hidden" id="search-row">
+      <input type="search" class="search-input" id="search-input" placeholder="Search English or Spanish…" autocomplete="off">
+    </div>
+  </header>
+
+  <div id="view-home">
+    <div class="greeting">
+      <h1 id="greet-h1">Hola, Stu</h1>
+      <div class="hint" id="greet-hint">Tap any phrase to hear it spoken.</div>
+      <div class="streak" id="streak-pill"><span class="streak-dot"></span><span id="streak-num">0</span>-day streak</div>
+    </div>
+
+    <div id="suggest-box"></div>
+
+    <div id="birthdays-box"></div>
+
+    <div class="section practice-cta-section">
+      <button class="practice-cta" id="practice-cta">
+        <div class="practice-cta-body">
+          <div class="practice-cta-eyebrow">Practice</div>
+          <div class="practice-cta-ttl">Spaced repetition flashcards</div>
+          <div class="practice-cta-sub"><span id="due-count">0</span> due now</div>
+        </div>
+        <div class="practice-cta-arrow">→</div>
+      </button>
+    </div>
+
+    <div id="all-groups"></div>
+
+    <div class="section" id="dialogue-section">
+      <div class="group-head"><span class="group-eyebrow">Real conversations</span></div>
+      <div id="dialogue-list"></div>
+    </div>
+  </div>
+
+  <div id="view-list" style="display:none">
+    <div class="phrase-list">
+      <div class="crumbs">
+        <button id="back-btn">← Back</button>
+        <span id="crumb-cat"></span>
+      </div>
+      <div id="phrases"></div>
+    </div>
+  </div>
+
+  <div id="view-search" style="display:none">
+    <div class="phrase-list">
+      <div id="search-results"></div>
+    </div>
+  </div>
+
+  <div id="view-favorites" style="display:none">
+    <div class="phrase-list">
+      <div class="crumbs"><span>⭐ Your starred phrases</span></div>
+      <div id="favorites-list"></div>
+    </div>
+  </div>
+
+  <div id="view-practice" style="display:none">
+    <div class="practice-wrap">
+      <div class="practice-header">
+        <button id="practice-exit" class="icon-btn" aria-label="Exit practice">←</button>
+        <div class="practice-progress">
+          <span id="practice-counter">0 / 0</span>
+          <div class="practice-bar"><div class="practice-bar-fill" id="practice-bar-fill"></div></div>
+        </div>
+      </div>
+
+      <div id="practice-empty" class="empty" style="display:none">
+        <h3>No phrases to practice</h3>
+        <p>Tap <strong>Save</strong> on any phrase, or pick a section to practice.</p>
+        <button id="practice-pick-section" class="act primary" style="margin-top:14px">Pick a section</button>
+      </div>
+
+      <div id="practice-card-wrap" class="practice-card-wrap">
+        <div class="practice-card" id="practice-card">
+          <div class="practice-side practice-front">
+            <div class="practice-prompt-label" id="practice-front-label">English</div>
+            <div class="practice-prompt-text" id="practice-front-text">…</div>
+            <div class="practice-hint">Tap to reveal Spanish</div>
+          </div>
+          <div class="practice-side practice-back" style="display:none">
+            <div class="practice-prompt-label">Spanish</div>
+            <div class="practice-prompt-text" id="practice-back-es">…</div>
+            <div class="practice-back-ph" id="practice-back-ph">…</div>
+            <div class="practice-back-en" id="practice-back-en">…</div>
+            <button class="act primary" id="practice-play" style="margin-top:14px"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg><span>Hear it</span></button>
+          </div>
+        </div>
+
+        <div class="practice-actions" id="practice-actions" style="display:none">
+          <button class="practice-act hard" data-rating="hard">
+            <span class="practice-act-lbl">Hard</span>
+            <span class="practice-act-sub">Again soon</span>
+          </button>
+          <button class="practice-act good" data-rating="good">
+            <span class="practice-act-lbl">Got it</span>
+            <span class="practice-act-sub">~3 days</span>
+          </button>
+          <button class="practice-act easy" data-rating="easy">
+            <span class="practice-act-lbl">Easy</span>
+            <span class="practice-act-sub">~1 week</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="practice-deck-picker" style="display:none">
+        <div class="practice-deck-title">Choose what to practice</div>
+        <button class="deck-card" data-deck="due"><span>Phrases due now</span></button>
+        <button class="deck-card" data-deck="favorites"><span>My saved phrases</span></button>
+        <button class="deck-card" data-deck="all"><span>All phrases (mixed)</span></button>
+        <div class="practice-deck-title" style="margin-top:16px">Or pick a section</div>
+        <div id="practice-section-list"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="view-add" style="display:none">
+    <div class="add-wrap">
+      <div class="add-header">
+        <button id="add-exit" class="icon-btn" aria-label="Cancel">←</button>
+        <div class="add-title">Add a phrase</div>
+      </div>
+
+      <div class="add-form">
+        <label class="add-label">English (what you want to say)</label>
+        <div class="add-input-row">
+          <input type="text" id="add-en" class="add-input" placeholder="e.g. The taxi is here" autocomplete="off">
+          <button id="add-mic-en" class="mic-btn" aria-label="Dictate English"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+        </div>
+
+        <label class="add-label">Spanish translation</label>
+        <div class="add-input-row">
+          <input type="text" id="add-es" class="add-input" placeholder="e.g. El taxi llegó" autocomplete="off">
+          <button id="add-mic-es" class="mic-btn" aria-label="Dictate Spanish"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+        </div>
+        <div class="add-help">Don't know? Type it in Google Translate first, then paste here.</div>
+
+        <label class="add-label">Phonetic (auto-generated, edit if needed)</label>
+        <div class="add-input-row">
+          <input type="text" id="add-ph" class="add-input" placeholder="auto-fills as you type Spanish">
+          <button id="add-regen" class="mic-btn" aria-label="Regenerate phonetic">↻</button>
+        </div>
+        <div class="add-help">Caps = stressed syllable. Hyphens between syllables.</div>
+
+        <label class="add-label">Note (optional)</label>
+        <input type="text" id="add-note" class="add-input" placeholder="When/where to use this">
+
+        <div class="add-preview" id="add-preview" style="display:none">
+          <div class="add-preview-ttl">Preview</div>
+          <div class="phrase" style="margin:0">
+            <div class="en" id="prev-en"></div>
+            <div class="es" id="prev-es"></div>
+            <div class="ph" id="prev-ph"></div>
+            <div class="phrase-actions">
+              <button class="act primary" id="prev-play"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg><span>Test pronunciation</span></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="add-buttons">
+          <button class="act" id="add-cancel">Cancel</button>
+          <button class="act primary" id="add-save">Save phrase</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="view-live" style="display:none">
+    <div class="live-wrap">
+      <div class="live-header">
+        <button id="live-exit" class="icon-btn" aria-label="Exit">←</button>
+        <div class="live-tabs">
+          <button class="live-tab active" data-mode="eavesdrop">Listen</button>
+          <button class="live-tab" data-mode="mirror">Mirror</button>
+          <button class="live-tab" data-mode="stuck">Stuck</button>
+        </div>
+      </div>
+
+      <!-- EAVESDROP -->
+      <div class="live-mode" id="mode-eavesdrop">
+        <div class="live-intro">
+          <h2>Eavesdrop Mode</h2>
+          <p>Your phone listens. Spanish appears here as you hear it. Tap any line to save.</p>
+          <div class="live-warn">Needs internet — browser uses Google's speech service. Best on Chrome/Edge.</div>
+        </div>
+
+        <div class="eavesdrop-controls">
+          <button class="live-big-btn" id="eavesdrop-toggle">
+            <span class="lbb-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg></span>
+            <span class="lbb-lbl">Start listening</span>
+          </button>
+          <div class="eavesdrop-status" id="eavesdrop-status">Idle</div>
+        </div>
+
+        <div class="eavesdrop-log" id="eavesdrop-log">
+          <div class="eavesdrop-empty">Captured Spanish will scroll here. Hand someone the phone or place it nearby.</div>
+        </div>
+      </div>
+
+      <!-- MIRROR -->
+      <div class="live-mode" id="mode-mirror" style="display:none">
+        <div class="live-intro">
+          <h2>Mirror Mode</h2>
+          <p>Speak Spanish freely. See exactly what came out of your mouth. Catch your own mistakes.</p>
+        </div>
+
+        <div class="mirror-controls">
+          <button class="live-big-btn" id="mirror-start">
+            <span class="lbb-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span>
+            <span class="lbb-lbl">Tap and speak</span>
+          </button>
+          <div class="mirror-status" id="mirror-status">Ready</div>
+        </div>
+
+        <div id="mirror-result" style="display:none">
+          <div class="mirror-card">
+            <div class="mirror-label">You said:</div>
+            <div class="mirror-es" id="mirror-es"></div>
+            <div class="mirror-ph" id="mirror-ph"></div>
+            <div class="mirror-actions">
+              <button class="act" id="mirror-play">Hear it back</button>
+              <a class="act" id="mirror-translate" target="_blank" rel="noopener">Translate</a>
+              <button class="act primary" id="mirror-save">Save to vault</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STUCK -->
+      <div class="live-mode" id="mode-stuck" style="display:none">
+        <div class="live-intro">
+          <h2>Stuck Mode</h2>
+          <p>You're mid-conversation and forgot a word. Hold the button, describe what you need in English, release. The Spanish word comes through your speaker — no screen needed.</p>
+        </div>
+
+        <div class="stuck-controls">
+          <button class="stuck-big-btn" id="stuck-btn">
+            <div class="stuck-icon"><svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></div>
+            <div class="stuck-lbl" id="stuck-lbl">Hold to ask</div>
+          </button>
+          <div class="stuck-status" id="stuck-status">Press and hold, describe in English, release.</div>
+        </div>
+
+        <div id="stuck-result" style="display:none" class="stuck-result">
+          <div class="stuck-q-label">You said:</div>
+          <div class="stuck-q" id="stuck-q"></div>
+          <div class="stuck-a-label">Spanish:</div>
+          <div class="stuck-a" id="stuck-a"></div>
+          <div class="stuck-ph" id="stuck-ph"></div>
+          <div class="stuck-en" id="stuck-en"></div>
+          <button class="act primary" id="stuck-repeat" style="margin-top:14px"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg><span>Say it again</span></button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-tab="home">
+      <span class="emo"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11.5L12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg></span>
+      <span>Home</span>
+    </button>
+    <button class="nav-item" data-tab="live">
+      <span class="emo"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M2 12a10 10 0 0 1 20 0M5 12a7 7 0 0 1 14 0M9 12a3 3 0 0 1 6 0"/></svg></span>
+      <span>Live</span>
+    </button>
+    <button class="nav-item" data-tab="practice">
+      <span class="emo"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg></span>
+      <span>Practice</span>
+    </button>
+    <button class="nav-item" data-tab="favorites">
+      <span class="emo"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.7 6.2 6.7.6-5.1 4.5 1.6 6.6L12 17.5 6.1 20.9l1.6-6.6L2.6 9.8l6.7-.6z"/></svg></span>
+      <span>Saved</span>
+    </button>
+    <button class="nav-item" data-tab="add">
+      <span class="emo"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
+      <span>Add</span>
+    </button>
+  </nav>
+
+  <!-- Floating Stuck Mode button (always accessible from home) -->
+  <button class="stuck-fab" id="stuck-fab" aria-label="Stuck? Quick word lookup">SOS</button>
+
+</div>
+
+<!-- Pronunciation Coach modal -->
+<div class="backdrop" id="coach-backdrop"></div>
+<div class="sheet coach-sheet" id="coach-sheet">
+  <div class="sheet-handle"></div>
+  <h2>Pronunciation Coach</h2>
+
+  <div class="coach-target">
+    <div class="coach-label">Say this:</div>
+    <div class="coach-es" id="coach-target-es">…</div>
+    <div class="coach-ph" id="coach-target-ph">…</div>
+    <button class="act primary" id="coach-hear"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg><span>Hear it first</span></button>
+  </div>
+
+  <button class="live-big-btn coach-mic" id="coach-mic">
+    <span class="lbb-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span>
+    <span class="lbb-lbl">Tap and try</span>
+  </button>
+  <div class="coach-status" id="coach-status">Ready when you are.</div>
+
+  <div id="coach-result" style="display:none">
+    <div class="coach-score-card">
+      <div class="coach-score-num" id="coach-score">—</div>
+      <div class="coach-score-lbl" id="coach-grade">—</div>
+    </div>
+    <div class="coach-diff">
+      <div class="coach-diff-row">
+        <span class="coach-diff-lbl">Target:</span>
+        <span class="coach-diff-val" id="coach-diff-target"></span>
+      </div>
+      <div class="coach-diff-row">
+        <span class="coach-diff-lbl">You said:</span>
+        <span class="coach-diff-val" id="coach-diff-got"></span>
+      </div>
+      <div class="coach-feedback" id="coach-feedback"></div>
+    </div>
+    <button class="act primary" id="coach-retry" style="width:100%;margin-top:14px;justify-content:center">Try again</button>
+  </div>
+
+  <button class="act" id="coach-close" style="width:100%;margin-top:18px;justify-content:center">Close</button>
+</div>
+
+<!-- Family Voice Bank modal -->
+<div class="backdrop" id="vb-backdrop"></div>
+<div class="sheet vb-sheet" id="vb-sheet">
+  <div class="sheet-handle"></div>
+  <h2>Record family voice</h2>
+
+  <div class="vb-target">
+    <div class="vb-label">Recording for:</div>
+    <div class="vb-es" id="vb-target-es">…</div>
+    <div class="vb-ph" id="vb-target-ph">…</div>
+  </div>
+
+  <div class="vb-row">
+    <div class="vb-label">Who is speaking?</div>
+    <div class="vb-speakers" id="vb-speakers">
+      <button class="vb-speaker active" data-speaker="stephania">Stephania</button>
+      <button class="vb-speaker" data-speaker="joaquin">Joaquín</button>
+      <button class="vb-speaker" data-speaker="other">Other</button>
+    </div>
+  </div>
+
+  <button class="live-big-btn vb-rec" id="vb-rec">
+    <span class="lbb-icon"><span class="vb-rec-dot"></span></span>
+    <span class="lbb-lbl">Hold to record</span>
+  </button>
+  <div class="vb-status" id="vb-status">Press and hold, say the phrase, release.</div>
+
+  <div id="vb-playback" style="display:none" class="vb-playback">
+    <div class="vb-label">Listen back:</div>
+    <audio id="vb-audio" controls style="width:100%"></audio>
+    <div class="vb-buttons">
+      <button class="act" id="vb-redo">Redo</button>
+      <button class="act primary" id="vb-save">Save voice</button>
+    </div>
+  </div>
+
+  <button class="act" id="vb-close" style="width:100%;margin-top:18px;justify-content:center">Close</button>
+</div>
+
+<div class="backdrop" id="backdrop"></div>
+<div class="sheet" id="sheet">
+  <div class="sheet-handle"></div>
+  <h2>Settings</h2>
+
+  <div class="sheet-row">
+    <div>
+      <div class="lbl">Voice speed</div>
+      <div class="sub-lbl">Slower is better for learning</div>
+    </div>
+    <select id="speed-select" style="padding:8px 12px;border-radius:10px;border:1px solid var(--rl);background:var(--cd)">
+      <option value="0.7">Slow (0.7×)</option>
+      <option value="0.85" selected>Learning (0.85×)</option>
+      <option value="1.0">Normal (1.0×)</option>
+    </select>
+  </div>
+
+  <div class="sheet-row">
+    <div>
+      <div class="lbl">Voice region</div>
+      <div class="sub-lbl">Pick the accent you hear most</div>
+    </div>
+    <select id="voice-select" style="padding:8px 12px;border-radius:10px;border:1px solid var(--rl);background:var(--cd);max-width:160px">
+      <option value="auto">Auto (best match)</option>
+    </select>
+  </div>
+
+  <div class="sheet-row">
+    <div>
+      <div class="lbl">Direction</div>
+      <div class="sub-lbl">Which language is the prompt</div>
+    </div>
+    <select id="direction-select" style="padding:8px 12px;border-radius:10px;border:1px solid var(--rl);background:var(--cd)">
+      <option value="en-es">EN → ES (default)</option>
+      <option value="es-en">ES → EN (translate to English)</option>
+    </select>
+  </div>
+
+  <div class="sheet-row">
+    <div>
+      <div class="lbl">Hide learned phrases</div>
+      <div class="sub-lbl">Focus on what you still need</div>
+    </div>
+    <button class="toggle" id="hide-learned-toggle" aria-label="Toggle hide learned"></button>
+  </div>
+
+  <div class="sheet-row">
+    <div>
+      <div class="lbl">Phonetic above Spanish</div>
+      <div class="sub-lbl">Show pronunciation first</div>
+    </div>
+    <button class="toggle" id="phon-first-toggle" aria-label="Toggle phonetic first"></button>
+  </div>
+
+  <div class="sheet-row" style="flex-direction:column;align-items:flex-start;gap:8px">
+    <div>
+      <div class="lbl">Reset progress</div>
+      <div class="sub-lbl">Clear favorites, learned, and streak</div>
+    </div>
+    <button id="reset-btn" style="padding:8px 16px;background:#fee;color:#933;border-radius:99px;font-size:0.85rem;font-weight:600;border:1px solid #c66">Reset everything</button>
+  </div>
+
+  <div class="sheet-row" style="flex-direction:column;align-items:flex-start;gap:4px">
+    <div class="lbl">About</div>
+    <div class="sub-lbl">Cotidiano v1 · Built for Stu · No accounts, no tracking. Everything saved on this device.</div>
+  </div>
+</div>
+
+<script src="./data.js"></script>
+<script src="./app.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+  }
+</script>
+</body>
+</html>

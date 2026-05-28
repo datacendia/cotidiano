@@ -1,0 +1,1902 @@
+// Cotidiano — app logic
+// State persisted to localStorage. No backend, no tracking.
+
+const STORE_KEY = 'cotidiano:v1';
+const defaultState = {
+  favorites: {},      // phraseId -> true
+  learned: {},        // phraseId -> true
+  streakDays: 0,
+  lastVisit: null,
+  practice: {},       // phraseId -> { dueAt: ms, interval: days, ease: 2.5, reps: int }
+  customPhrases: [],  // [{ en, es, ph, note, createdAt }]
+  settings: {
+    speed: 0.85,
+    voice: 'auto',
+    hideLearned: false,
+    phoneticFirst: false,
+    direction: 'en-es', // 'en-es' = English prompt, Spanish answer · 'es-en' = reversed
+  },
+};
+
+let state = loadState();
+let currentVoice = null;
+let voicesReady = false;
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return { ...defaultState };
+    const parsed = JSON.parse(raw);
+    return {
+      ...defaultState,
+      ...parsed,
+      settings: { ...defaultState.settings, ...(parsed.settings || {}) },
+    };
+  } catch {
+    return { ...defaultState };
+  }
+}
+
+function saveState() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch {}
+}
+
+// ── Streak tracking ────────────────────────────────────────
+function tickStreak() {
+  const today = new Date().toISOString().slice(0, 10);
+  if (state.lastVisit === today) return;
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  if (state.lastVisit === yesterday) state.streakDays += 1;
+  else if (state.lastVisit !== today) state.streakDays = 1;
+  state.lastVisit = today;
+  saveState();
+}
+
+// ── Phrase ID + flattening helpers ────────────────────────
+function phraseId(phrase) {
+  // Stable id from Spanish text
+  return 'p_' + phrase.es.toLowerCase().replace(/[^a-z0-9áéíóúñü]/g, '').slice(0, 32);
+}
+
+function allPhrases() {
+  const out = [];
+  for (const groupKey of Object.keys(DATA)) {
+    const group = DATA[groupKey];
+    for (const section of group.sections) {
+      for (const p of section.phrases) {
+        out.push({ ...p, _section: section.title, _group: groupKey, _id: phraseId(p) });
+      }
+    }
+  }
+  return out;
+}
+
+// ── TTS ────────────────────────────────────────────────────
+function loadVoices() {
+  const voices = speechSynthesis.getVoices();
+  const sel = document.getElementById('voice-select');
+  if (!voices.length) return;
+  voicesReady = true;
+  // Prefer es-MX, es-PE, es-CO, es-AR, then any es-*
+  const spanishVoices = voices.filter((v) => v.lang.startsWith('es'));
+  const priority = ['es-MX', 'es-PE', 'es-CO', 'es-AR', 'es-CL', 'es-US', 'es-ES'];
+  spanishVoices.sort((a, b) => {
+    const ai = priority.indexOf(a.lang); const bi = priority.indexOf(b.lang);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+  sel.innerHTML = '<option value="auto">Auto (best match)</option>' +
+    spanishVoices.map((v) => `<option value="${v.name}">${v.lang} — ${v.name}</option>`).join('');
+  sel.value = state.settings.voice || 'auto';
+  pickVoice();
+}
+
+function pickVoice() {
+  const voices = speechSynthesis.getVoices();
+  const target = state.settings.voice;
+  if (target && target !== 'auto') {
+    currentVoice = voices.find((v) => v.name === target) || null;
+    if (currentVoice) return;
+  }
+  const spanishVoices = voices.filter((v) => v.lang.startsWith('es'));
+  const priority = ['es-MX', 'es-PE', 'es-CO', 'es-AR', 'es-CL', 'es-US', 'es-ES'];
+  for (const lang of priority) {
+    const v = spanishVoices.find((v) => v.lang === lang);
+    if (v) { currentVoice = v; return; }
+  }
+  currentVoice = spanishVoices[0] || null;
+}
+
+let playingBtn = null;
+function speak(text, opts = {}) {
+  if (!('speechSynthesis' in window)) {
+    alert('Your browser does not support speech. Update to a recent Chrome or Safari.');
+    return;
+  }
+  speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = currentVoice ? currentVoice.lang : 'es-MX';
+  if (currentVoice) utter.voice = currentVoice;
+  utter.rate = opts.slow ? Math.max(0.5, state.settings.speed - 0.2) : state.settings.speed;
+  utter.pitch = 1.0;
+  if (opts.btn) {
+    playingBtn = opts.btn;
+    opts.btn.classList.add('playing');
+  }
+  utter.onend = utter.onerror = () => {
+    if (playingBtn) playingBtn.classList.remove('playing');
+    playingBtn = null;
+  };
+  speechSynthesis.speak(utter);
+}
+
+// ── Rendering ──────────────────────────────────────────────
+const el = (id) => document.getElementById(id);
+
+// Inline SVG icon set — keeps the UI free of cheap-looking emoji
+const ICONS = {
+  play:    '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>',
+  speak:   '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
+  slow:    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  star:    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.7 6.2 6.7.6-5.1 4.5 1.6 6.6L12 17.5 6.1 20.9l1.6-6.6L2.6 9.8l6.7-.6z"/></svg>',
+  starOn:  '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M12 3l2.7 6.2 6.7.6-5.1 4.5 1.6 6.6L12 17.5 6.1 20.9l1.6-6.6L2.6 9.8l6.7-.6z"/></svg>',
+  check:   '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-11"/></svg>',
+  voice:   '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-4.5-7-11a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6.5-7 11-7 11"/></svg>',
+  // Bottom nav
+  navHome:     '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11.5L12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>',
+  navLive:     '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M2 12a10 10 0 0 1 20 0M5 12a7 7 0 0 1 14 0M9 12a3 3 0 0 1 6 0"/></svg>',
+  navPractice: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg>',
+  navSaved:    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.7 6.2 6.7.6-5.1 4.5 1.6 6.6L12 17.5 6.1 20.9l1.6-6.6L2.6 9.8l6.7-.6z"/></svg>',
+  navAdd:      '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
+};
+
+function greetingForTime() {
+  const h = new Date().getHours();
+  if (h < 6)  return { greet: 'Buenas noches', hint: 'Late night. Try the bedroom section.' };
+  if (h < 12) return { greet: 'Buenos días',  hint: 'Start the day right — morning + breakfast phrases below.' };
+  if (h < 19) return { greet: 'Buenas tardes', hint: 'Try work or lunch phrases.' };
+  return { greet: 'Buenas noches', hint: 'Family time. Try kids, dinner, or bedtime phrases.' };
+}
+
+function suggestForTime() {
+  const h = new Date().getHours();
+  if (h < 6) return { groupKey: 'daily', sectionId: 'bedroom', ttl: 'Right now', msg: 'Quiet talk with Stephania — bedroom phrases.' };
+  if (h < 9) return { groupKey: 'daily', sectionId: 'waking', ttl: 'Morning routine', msg: 'Wake up the kids and Stephania with the right phrases.' };
+  if (h < 11) return { groupKey: 'daily', sectionId: 'breakfast', ttl: 'Breakfast time', msg: 'Try the breakfast and kids-morning phrases.' };
+  if (h < 13) return { groupKey: 'daily', sectionId: 'office', ttl: 'Office hours', msg: 'Office small talk and meetings.' };
+  if (h < 15) return { groupKey: 'daily', sectionId: 'lunch', ttl: 'Almuerzo', msg: 'Lunch phrases — order, share, chat.' };
+  if (h < 18) return { groupKey: 'work', sectionId: 'meetings', ttl: 'Work mode', msg: 'Tech meetings and client conversations.' };
+  if (h < 20) return { groupKey: 'daily', sectionId: 'groceries', ttl: 'On the way home', msg: 'Groceries, bus, taxi.' };
+  if (h < 22) return { groupKey: 'daily', sectionId: 'dinner', ttl: 'Family evening', msg: 'Dinner, family time, kids.' };
+  return { groupKey: 'daily', sectionId: 'bedroom', ttl: 'Wind down', msg: 'Putting kids to bed, bedroom talk.' };
+}
+
+function renderHome() {
+  const g = greetingForTime();
+  el('greet-h1').textContent = `${g.greet}, Stu`;
+  el('greet-hint').textContent = g.hint;
+  el('streak-num').textContent = state.streakDays;
+
+  // Suggestion
+  const s = suggestForTime();
+  el('suggest-box').innerHTML = `
+    <div class="suggest" id="suggest-card">
+      <div class="ttl">${s.ttl}</div>
+      <div class="msg">${s.msg}</div>
+      <button class="go" data-group="${s.groupKey}" data-section="${s.sectionId}">Open →</button>
+    </div>
+  `;
+  el('suggest-card').querySelector('.go').addEventListener('click', (e) => {
+    const g = e.currentTarget.dataset.group;
+    const s = e.currentTarget.dataset.section;
+    showSection(g, s);
+  });
+
+  // Birthdays widget
+  renderBirthdaysBox();
+
+  // Practice CTA — show count due
+  el('due-count').textContent = countDuePhrases();
+
+  // Render all groups in one scroll
+  renderAllGroups();
+
+  // Dialogues — show top 2 across all groups
+  renderDialogues('daily');
+}
+
+// ── Family birthdays ───────────────────────────────────────
+function daysUntilBirthday(mmdd, today = new Date()) {
+  const [m, d] = mmdd.split('-').map(Number);
+  const yr = today.getFullYear();
+  let next = new Date(yr, m - 1, d);
+  // zero out time on today
+  const t = new Date(yr, today.getMonth(), today.getDate());
+  if (next < t) next = new Date(yr + 1, m - 1, d);
+  return Math.round((next - t) / 86400000);
+}
+
+function ageOnNextBirthday(birthYear, mmdd, today = new Date()) {
+  if (!birthYear) return null;
+  const [m, d] = mmdd.split('-').map(Number);
+  const yr = today.getFullYear();
+  const t = new Date(yr, today.getMonth(), today.getDate());
+  const thisYearBday = new Date(yr, m - 1, d);
+  const targetYear = thisYearBday < t ? yr + 1 : yr;
+  return targetYear - birthYear;
+}
+
+function spanishMonth(num) {
+  return ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'][num - 1];
+}
+
+// Cohort-aware birthday phrase. Older relatives get formal usted, peers get casual tú.
+function birthdayPhraseFor(b) {
+  const name = b.name.replace(/\s*\(.*?\)\s*/g, '').trim();
+  switch (b.cohort) {
+    case 'wife':
+      return '¡Feliz cumpleaños, mi amor!';
+    case 'elder-inlaw':
+      // Formal usted — for suegros (~60yo)
+      return `Le deseo un feliz cumpleaños, ${b.relES}`;
+    case 'abuelo':
+      // Most formal — for grandparents
+      return `¡Feliz cumpleaños, ${name}! Le deseo lo mejor.`;
+    case 'elder':
+      // Semi-formal — for tíos/tías of parents' generation
+      return `¡Feliz cumpleaños, ${name}! Que cumpla muchos más.`;
+    case 'teen':
+      return `¡Feliz cumple, ${name}!`;
+    case 'peer':
+      return `¡Feliz cumple, ${name}!`;
+    default:
+      return `¡Feliz cumpleaños, ${name}!`;
+  }
+}
+
+function renderBirthdaysBox() {
+  const box = el('birthdays-box');
+  if (!box || typeof BIRTHDAYS === 'undefined') return;
+  const today = new Date();
+  const enriched = BIRTHDAYS.map((b) => ({
+    ...b,
+    days: daysUntilBirthday(b.date, today),
+    age: ageOnNextBirthday(b.year, b.date, today),
+  })).sort((a, b) => a.days - b.days);
+
+  // Today's celebrants (non-memoriam)
+  const todays = enriched.filter((b) => b.days === 0 && !b.memoriam);
+  // Memoriam today
+  const memoriamToday = enriched.filter((b) => b.days === 0 && b.memoriam);
+  // Next 3 non-memoriam, not today
+  const upcoming = enriched.filter((b) => b.days > 0 && !b.memoriam).slice(0, 3);
+
+  if (!todays.length && !memoriamToday.length && !upcoming.length) {
+    box.innerHTML = '';
+    return;
+  }
+
+  let html = '<div class="bday-card">';
+  html += '<div class="bday-head">Cumpleaños</div>';
+
+  if (todays.length) {
+    html += '<div class="bday-today">';
+    todays.forEach((b) => {
+      const ageBit = b.age ? ` cumple <strong>${b.age}</strong>` : '';
+      const phraseES = birthdayPhraseFor(b);
+      html += `
+        <div class="bday-today-row">
+          <div class="bday-today-line"><span class="bday-today-pill">HOY</span> <strong>${b.name}</strong>${ageBit} <span class="bday-rel">· ${b.relES}</span></div>
+          <div class="bday-today-phrase">
+            <span class="bday-es">${phraseES}</span>
+            <button class="bday-play" aria-label="Reproducir" data-text="${escapeAttr(phraseES)}">${ICONS.play}</button>
+          </div>
+        </div>
+      `;
+    });
+    html += '</div>';
+  }
+
+  if (memoriamToday.length) {
+    memoriamToday.forEach((b) => {
+      html += `<div class="bday-memoriam"><span class="bday-memoriam-dot"></span> Hoy recordamos a <strong>${b.name}</strong> · ${b.relES}</div>`;
+    });
+  }
+
+  if (upcoming.length) {
+    html += '<div class="bday-upcoming">';
+    upcoming.forEach((b) => {
+      const [m, d] = b.date.split('-').map(Number);
+      const dateStr = `${d} de ${spanishMonth(m)}`;
+      const dayLbl = b.days === 1 ? 'mañana' : `en ${b.days} días`;
+      html += `
+        <div class="bday-row">
+          <div class="bday-name">${b.name} <span class="bday-rel">· ${b.relES}</span></div>
+          <div class="bday-when">${dateStr} <span class="bday-days">${dayLbl}</span></div>
+        </div>
+      `;
+    });
+    html += '</div>';
+  }
+
+  html += '</div>';
+  box.innerHTML = html;
+
+  // Wire up speak buttons
+  box.querySelectorAll('.bday-play').forEach((b) => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      speak(b.dataset.text, { btn: b });
+    });
+  });
+}
+
+function renderAllGroups() {
+  const container = el('all-groups');
+  const order = ['daily', 'personal', 'work', 'extra', 'out', 'parenting', 'culture', 'family', 'kids', 'custom'];
+  const html = order.map((groupKey) => {
+    const group = DATA[groupKey];
+    if (!group) return '';
+    // Skip custom if empty
+    if (groupKey === 'custom' && (!group.sections[0] || !group.sections[0].phrases.length)) return '';
+    return `
+      <div class="section group-block" data-group="${groupKey}">
+        <div class="group-head">
+          <span class="group-eyebrow">${String(group.title).toUpperCase()}</span>
+        </div>
+        <div class="cat-grid">
+          ${group.sections.map((s) => `
+            <button class="cat-card" data-group="${groupKey}" data-section="${s.id}">
+              <div class="label">${s.title}</div>
+              <div class="count">${s.phrases.length} phrases</div>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }).join('');
+  container.innerHTML = html;
+  container.querySelectorAll('.cat-card').forEach((c) => {
+    c.addEventListener('click', () => showSection(c.dataset.group, c.dataset.section));
+  });
+}
+
+function renderCategories(groupKey) {
+  // Legacy single-group view kept for showSection back navigation
+  renderAllGroups();
+}
+
+function renderDialogues(groupKey) {
+  const dlgList = el('dialogue-list');
+  const dialogues = (DIALOGUES[groupKey] || []).slice(0, 2);
+  if (!dialogues.length) { dlgList.innerHTML = ''; return; }
+  dlgList.innerHTML = dialogues.map((d, i) => `
+    <div class="dialogue">
+      <div class="dialogue-title">${d.title}</div>
+      ${d.lines.map((ln) => `
+        <div class="dialogue-line">
+          <div class="who">${ln.who}</div>
+          <div class="es"><button class="mini-play" aria-label="Reproducir" data-text="${escapeAttr(ln.es)}">${ICONS.play}</button> ${ln.es}</div>
+          <div class="ph">${ln.ph}</div>
+          <div class="en">${ln.en}</div>
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+  dlgList.querySelectorAll('.mini-play').forEach((b) => {
+    b.addEventListener('click', (e) => { e.stopPropagation(); speak(b.dataset.text, { btn: b }); });
+  });
+}
+
+function escapeAttr(s) {
+  return s.replace(/"/g, '&quot;');
+}
+
+let currentSectionGroup = null;
+let currentSectionId = null;
+
+function showSection(groupKey, sectionId) {
+  const group = DATA[groupKey];
+  const section = group.sections.find((s) => s.id === sectionId);
+  if (!section) return;
+  currentSectionGroup = groupKey;
+  currentSectionId = sectionId;
+  showView('list');
+  el('crumb-cat').textContent = `${group.title} → ${section.title}`;
+  renderPhrases(section.phrases);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function renderPhrases(phrases) {
+  const container = el('phrases');
+  const ordered = state.settings.phoneticFirst
+    ? phrases
+    : phrases;
+  const filtered = state.settings.hideLearned
+    ? phrases.filter((p) => !state.learned[phraseId(p)])
+    : phrases;
+  if (!filtered.length) {
+    container.innerHTML = `<div class="empty"><h3>All learned</h3><p>You've marked every phrase here as learned. Turn off “Hide learned” in settings to see them again.</p></div>`;
+    return;
+  }
+  container.innerHTML = filtered.map((p) => renderPhraseCard(p)).join('');
+  attachPhraseEvents(container);
+}
+
+function renderPhraseCard(p) {
+  const id = phraseId(p);
+  const isFav = !!state.favorites[id];
+  const isLearned = !!state.learned[id];
+  const phonFirst = state.settings.phoneticFirst;
+  const esFirst = state.settings.direction === 'es-en';
+  const noteHtml = p.note ? `<div class="note">${p.note}</div>` : '';
+  const hasVoice = !!voiceBankIndex[id];
+
+  // Render order depends on direction
+  let body;
+  if (esFirst) {
+    // Spanish-first: large Spanish on top, phonetic, English smaller below
+    body = `
+      <div class="es">${p.es}</div>
+      <div class="ph">${p.ph}</div>
+      <div class="en" style="margin-top:8px">${p.en}</div>
+    `;
+  } else if (phonFirst) {
+    body = `
+      <div class="en">${p.en}</div>
+      <div class="ph" style="font-size:1.3rem;margin-bottom:8px">${p.ph}</div>
+      <div class="es" style="font-size:1.15rem;color:var(--mu)">${p.es}</div>
+    `;
+  } else {
+    body = `
+      <div class="en">${p.en}</div>
+      <div class="es">${p.es}</div>
+      <div class="ph">${p.ph}</div>
+    `;
+  }
+
+  return `
+    <div class="phrase ${isLearned ? 'learned' : ''}" data-id="${id}">
+      ${body}
+      ${noteHtml}
+      <div class="phrase-actions">
+        <button class="act primary play">${ICONS.play}<span>Play</span></button>
+        <button class="act slow">${ICONS.slow}<span>Slow</span></button>
+        <button class="act try">${ICONS.speak}<span>Speak</span></button>
+        <button class="act voicebank ${hasVoice ? 'has-voice' : ''}">${ICONS.voice}<span>${hasVoice ? 'Family' : 'Voice'}</span></button>
+        <button class="act star ${isFav ? 'on' : ''}">${isFav ? ICONS.starOn : ICONS.star}<span>${isFav ? 'Saved' : 'Save'}</span></button>
+        <button class="act check ${isLearned ? 'on' : ''}">${isLearned ? ICONS.check : ''}<span>${isLearned ? 'Learned' : 'Got it'}</span></button>
+      </div>
+    </div>
+  `;
+}
+
+function attachPhraseEvents(container) {
+  container.querySelectorAll('.phrase').forEach((card) => {
+    const id = card.dataset.id;
+    const allP = allPhrases();
+    const phrase = allP.find((p) => p._id === id);
+    if (!phrase) return;
+    const playBtn = card.querySelector('.play');
+    const slowBtn = card.querySelector('.slow');
+    const tryBtn = card.querySelector('.try');
+    const vbBtn = card.querySelector('.voicebank');
+    const starBtn = card.querySelector('.star');
+    const checkBtn = card.querySelector('.check');
+
+    const playPhrase = (slow = false) => {
+      // If family voice exists, play that instead of TTS
+      if (voiceBankIndex[id] && !slow) {
+        playFamilyVoice(id, playBtn);
+      } else {
+        speak(phrase.es, { btn: playBtn, slow });
+      }
+    };
+
+    playBtn.addEventListener('click', () => playPhrase(false));
+    slowBtn.addEventListener('click', () => speak(phrase.es, { btn: slowBtn, slow: true }));
+
+    if (tryBtn) tryBtn.addEventListener('click', () => openCoach(phrase));
+    if (vbBtn) vbBtn.addEventListener('click', () => openVoiceBank(phrase));
+
+    // Tap card body (not buttons) = play
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.phrase-actions')) return;
+      playPhrase(false);
+    });
+
+    starBtn.addEventListener('click', () => {
+      if (state.favorites[id]) delete state.favorites[id];
+      else state.favorites[id] = true;
+      saveState();
+      starBtn.classList.toggle('on');
+      starBtn.innerHTML = (state.favorites[id] ? ICONS.starOn : ICONS.star) + '<span>' + (state.favorites[id] ? 'Saved' : 'Save') + '</span>';
+    });
+
+    checkBtn.addEventListener('click', () => {
+      if (state.learned[id]) delete state.learned[id];
+      else state.learned[id] = true;
+      saveState();
+      checkBtn.classList.toggle('on');
+      checkBtn.innerHTML = (state.learned[id] ? ICONS.check : '') + '<span>' + (state.learned[id] ? 'Learned' : 'Got it') + '</span>';
+      card.classList.toggle('learned');
+    });
+  });
+}
+
+// ── Views ──────────────────────────────────────────────────
+function showView(name) {
+  const views = ['home', 'list', 'search', 'favorites', 'practice', 'add', 'live'];
+  views.forEach((v) => {
+    const node = el('view-' + v);
+    if (node) node.style.display = v === name ? '' : 'none';
+  });
+  // Hide stuck FAB inside Live view (it's redundant there)
+  const fab = el('stuck-fab');
+  if (fab) fab.style.display = name === 'live' ? 'none' : '';
+}
+
+// ── Search ─────────────────────────────────────────────────
+let searchTimeout = null;
+function handleSearch(q) {
+  q = q.trim().toLowerCase();
+  if (!q) { showView('home'); el('search-row').classList.add('hidden'); return; }
+  showView('search');
+  const all = allPhrases();
+  const results = all.filter((p) =>
+    p.en.toLowerCase().includes(q) ||
+    p.es.toLowerCase().includes(q) ||
+    p.ph.toLowerCase().includes(q)
+  ).slice(0, 60);
+  const container = el('search-results');
+  if (!results.length) {
+    container.innerHTML = `<div class="empty"><h3>No matches</h3><p>Try a different word or check spelling.</p></div>`;
+    return;
+  }
+  container.innerHTML = `<div class="crumbs"><span>${results.length} matches for "<strong>${escapeAttr(q)}</strong>"</span></div>` +
+    results.map((p) => renderPhraseCard(p)).join('');
+  attachPhraseEvents(container);
+}
+
+// ── Favorites ──────────────────────────────────────────────
+function renderFavorites() {
+  const all = allPhrases();
+  const favs = all.filter((p) => state.favorites[p._id]);
+  const container = el('favorites-list');
+  if (!favs.length) {
+    container.innerHTML = `<div class="empty"><h3>No saved phrases yet</h3><p>Tap <strong>Save</strong> on any phrase to add it here.</p></div>`;
+    return;
+  }
+  container.innerHTML = favs.map((p) => renderPhraseCard(p)).join('');
+  attachPhraseEvents(container);
+}
+
+// ── Nav ────────────────────────────────────────────────────
+function setTab(name) {
+  document.querySelectorAll('.nav-item').forEach((b) => {
+    b.classList.toggle('active', b.dataset.tab === name);
+  });
+  if (name === 'home') { showView('home'); renderHome(); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+  if (name === 'favorites') { showView('favorites'); renderFavorites(); return; }
+  if (name === 'practice') { showView('practice'); openPracticePicker(); return; }
+  if (name === 'add') { showView('add'); openAddForm(); return; }
+  if (name === 'live') { showView('live'); openLiveMode('eavesdrop'); return; }
+  // fallback
+  showView('home');
+  renderHome();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ── Settings sheet ─────────────────────────────────────────
+function openSheet() { el('sheet').classList.add('open'); el('backdrop').classList.add('open'); }
+function closeSheet() { el('sheet').classList.remove('open'); el('backdrop').classList.remove('open'); }
+
+function refreshCurrentView() {
+  // Re-render whatever's actually visible so the EN/ES toggle takes effect immediately
+  const isVisible = (id) => {
+    const node = el(id);
+    return node && node.style.display !== 'none';
+  };
+  if (isVisible('view-list') && currentSectionGroup && currentSectionId) {
+    showSection(currentSectionGroup, currentSectionId);
+    return;
+  }
+  if (isVisible('view-search')) {
+    const q = el('search-input') ? el('search-input').value : '';
+    if (q) { handleSearch(q); return; }
+  }
+  if (isVisible('view-favorites')) { renderFavorites(); return; }
+  if (isVisible('view-home')) { renderHome(); return; }
+  // Fallback: re-render via active tab
+  const activeTab = document.querySelector('.nav-item.active')?.dataset.tab || 'home';
+  setTab(activeTab);
+}
+
+function toggleDirection() {
+  state.settings.direction = state.settings.direction === 'es-en' ? 'en-es' : 'es-en';
+  saveState();
+  syncDirectionBtn();
+  refreshCurrentView();
+}
+
+function syncDirectionBtn() {
+  const btn = el('btn-direction');
+  if (!btn) return;
+  const isES = state.settings.direction === 'es-en';
+  btn.textContent = isES ? 'ES→EN' : 'EN→ES';
+  btn.classList.toggle('active', isES);
+  const sel = el('direction-select');
+  if (sel) sel.value = state.settings.direction || 'en-es';
+}
+
+function bindSettings() {
+  el('speed-select').value = String(state.settings.speed);
+  el('speed-select').addEventListener('change', (e) => {
+    state.settings.speed = parseFloat(e.target.value); saveState();
+  });
+  el('voice-select').addEventListener('change', (e) => {
+    state.settings.voice = e.target.value; saveState(); pickVoice();
+  });
+  el('direction-select').value = state.settings.direction || 'en-es';
+  el('direction-select').addEventListener('change', (e) => {
+    state.settings.direction = e.target.value; saveState();
+    refreshCurrentView();
+  });
+  const ht = el('hide-learned-toggle');
+  if (state.settings.hideLearned) ht.classList.add('on');
+  ht.addEventListener('click', () => {
+    state.settings.hideLearned = !state.settings.hideLearned;
+    ht.classList.toggle('on'); saveState();
+  });
+  const pf = el('phon-first-toggle');
+  if (state.settings.phoneticFirst) pf.classList.add('on');
+  pf.addEventListener('click', () => {
+    state.settings.phoneticFirst = !state.settings.phoneticFirst;
+    pf.classList.toggle('on'); saveState();
+  });
+  el('reset-btn').addEventListener('click', () => {
+    if (!confirm('Reset everything? This clears favorites, learned status, and streak.')) return;
+    state = { ...defaultState };
+    saveState();
+    closeSheet();
+    setTab('home');
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+//  PRACTICE MODE — spaced repetition flashcards
+// ════════════════════════════════════════════════════════════
+//
+// Algorithm (simplified SM-2):
+//   First time:  rated → next due in {hard: 10min, good: 1d, easy: 3d}
+//   Subsequent:  hard → interval * 0.5, good → interval * 2.0, easy → interval * 2.7
+//   Minimum interval: 10 minutes. Maximum: 90 days.
+
+const PRACTICE_INTERVALS = {
+  firstHard: 10 / 1440, // 10 min in days
+  firstGood: 1,
+  firstEasy: 3,
+};
+
+function countDuePhrases() {
+  const now = Date.now();
+  let count = 0;
+  for (const [id, rec] of Object.entries(state.practice)) {
+    if (rec.dueAt && rec.dueAt <= now) count++;
+  }
+  return count;
+}
+
+function getPracticeRecord(phraseId) {
+  return state.practice[phraseId] || { dueAt: 0, interval: 0, reps: 0 };
+}
+
+function ratePhrase(phraseId, rating) {
+  const rec = getPracticeRecord(phraseId);
+  const isFirst = rec.reps === 0;
+  let newInterval;
+  if (isFirst) {
+    newInterval = rating === 'hard' ? PRACTICE_INTERVALS.firstHard
+                : rating === 'good' ? PRACTICE_INTERVALS.firstGood
+                :                       PRACTICE_INTERVALS.firstEasy;
+  } else {
+    const mult = rating === 'hard' ? 0.5 : rating === 'good' ? 2.0 : 2.7;
+    newInterval = Math.max(rec.interval * mult, 10/1440);
+  }
+  newInterval = Math.min(newInterval, 90);
+  state.practice[phraseId] = {
+    dueAt: Date.now() + newInterval * 86400000,
+    interval: newInterval,
+    reps: rec.reps + 1,
+    lastRating: rating,
+  };
+  saveState();
+}
+
+let practiceQueue = [];
+let practiceIdx = 0;
+let practiceFlipped = false;
+let practiceCardWrapHTML = ''; // preserved template for restore
+
+function openPracticePicker() {
+  // Restore card-wrap markup if completion screen overwrote it
+  if (practiceCardWrapHTML && !el('practice-card')) {
+    el('practice-card-wrap').innerHTML = practiceCardWrapHTML;
+    rebindPracticeCard();
+  }
+  el('practice-card-wrap').style.display = 'none';
+  el('practice-empty').style.display = 'none';
+  el('practice-deck-picker').style.display = '';
+
+  // Populate section list
+  const list = el('practice-section-list');
+  const html = [];
+  for (const groupKey of ['daily', 'personal', 'work', 'extra', 'out', 'parenting', 'culture', 'family', 'kids', 'custom']) {
+    const group = DATA[groupKey];
+    if (!group) continue;
+    for (const section of group.sections) {
+      if (!section.phrases.length) continue;
+      html.push(`<button class="deck-card" data-group="${groupKey}" data-section="${section.id}">
+        ${section.icon} <span>${section.title} <em style="color:var(--mu);font-style:normal;font-weight:400;font-size:0.85em">(${section.phrases.length})</em></span>
+      </button>`);
+    }
+  }
+  list.innerHTML = html.join('');
+
+  // Bind deck choices
+  el('practice-deck-picker').querySelectorAll('.deck-card').forEach((c) => {
+    c.addEventListener('click', () => {
+      if (c.dataset.deck) startPracticeDeck(c.dataset.deck);
+      else if (c.dataset.section) startPracticeSection(c.dataset.group, c.dataset.section);
+    });
+  });
+}
+
+function startPracticeDeck(deck) {
+  const all = allPhrases();
+  let queue = [];
+  const now = Date.now();
+  if (deck === 'due') {
+    queue = all.filter((p) => {
+      const rec = state.practice[p._id];
+      return rec && rec.dueAt && rec.dueAt <= now;
+    });
+    // Add some never-practiced as filler if too few
+    if (queue.length < 5) {
+      const fresh = all.filter((p) => !state.practice[p._id]).slice(0, 10);
+      queue = [...queue, ...fresh];
+    }
+  } else if (deck === 'favorites') {
+    queue = all.filter((p) => state.favorites[p._id]);
+  } else if (deck === 'all') {
+    queue = [...all];
+    // Shuffle
+    for (let i = queue.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [queue[i], queue[j]] = [queue[j], queue[i]];
+    }
+    queue = queue.slice(0, 30);
+  }
+  startPracticeQueue(queue);
+}
+
+function startPracticeSection(groupKey, sectionId) {
+  const section = DATA[groupKey].sections.find((s) => s.id === sectionId);
+  if (!section) return;
+  const queue = section.phrases.map((p) => ({ ...p, _id: phraseId(p) }));
+  startPracticeQueue(queue);
+}
+
+function startPracticeQueue(queue) {
+  if (!queue.length) {
+    el('practice-deck-picker').style.display = 'none';
+    el('practice-empty').style.display = '';
+    el('practice-card-wrap').style.display = 'none';
+    el('practice-pick-section').onclick = openPracticePicker;
+    return;
+  }
+  practiceQueue = queue;
+  practiceIdx = 0;
+  el('practice-deck-picker').style.display = 'none';
+  el('practice-empty').style.display = 'none';
+  el('practice-card-wrap').style.display = '';
+  showPracticeCard();
+}
+
+function showPracticeCard() {
+  if (practiceIdx >= practiceQueue.length) {
+    // Done
+    el('practice-card-wrap').innerHTML = `
+      <div class="empty" style="padding:80px 30px">
+        <h3>Practice complete</h3>
+        <p>${practiceQueue.length} phrases reviewed.</p>
+        <button class="act primary" id="practice-again" style="margin-top:14px">Practice again</button>
+      </div>
+    `;
+    el('practice-again').onclick = openPracticePicker;
+    return;
+  }
+  practiceFlipped = false;
+  const p = practiceQueue[practiceIdx];
+  el('practice-counter').textContent = `${practiceIdx + 1} / ${practiceQueue.length}`;
+  el('practice-bar-fill').style.width = `${(practiceIdx / practiceQueue.length) * 100}%`;
+
+  const esFirst = state.settings.direction === 'es-en';
+  if (esFirst) {
+    // Spanish on front, English on back — for translating-INTO-English practice
+    el('practice-front-text').textContent = p.es;
+    el('practice-front-label').textContent = 'Spanish';
+    el('practice-back-es').textContent = p.en;
+    el('practice-back-ph').textContent = p.ph;
+    el('practice-back-en').textContent = p.es;
+  } else {
+    el('practice-front-text').textContent = p.en;
+    el('practice-front-label').textContent = 'English';
+    el('practice-back-es').textContent = p.es;
+    el('practice-back-ph').textContent = p.ph;
+    el('practice-back-en').textContent = p.en;
+  }
+  document.querySelector('.practice-front').style.display = '';
+  document.querySelector('.practice-back').style.display = 'none';
+  el('practice-actions').style.display = 'none';
+}
+
+function flipPracticeCard() {
+  if (practiceFlipped || practiceIdx >= practiceQueue.length) return;
+  practiceFlipped = true;
+  document.querySelector('.practice-front').style.display = 'none';
+  document.querySelector('.practice-back').style.display = '';
+  el('practice-actions').style.display = '';
+  // Auto-play the Spanish
+  const p = practiceQueue[practiceIdx];
+  setTimeout(() => speak(p.es, { btn: el('practice-play') }), 150);
+}
+
+function ratePracticeCard(rating) {
+  if (!practiceFlipped) return;
+  const p = practiceQueue[practiceIdx];
+  ratePhrase(p._id, rating);
+  practiceIdx++;
+  setTimeout(showPracticeCard, 200);
+}
+
+function bindPractice() {
+  el('practice-cta').addEventListener('click', () => setTab('practice'));
+  el('practice-exit').addEventListener('click', () => setTab('home'));
+  // Snapshot the card-wrap markup so we can restore after completion screen
+  practiceCardWrapHTML = el('practice-card-wrap').innerHTML;
+  rebindPracticeCard();
+}
+
+function rebindPracticeCard() {
+  el('practice-card').addEventListener('click', flipPracticeCard);
+  el('practice-play').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (practiceIdx < practiceQueue.length) {
+      speak(practiceQueue[practiceIdx].es, { btn: el('practice-play') });
+    }
+  });
+  document.querySelectorAll('.practice-act').forEach((b) => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      ratePracticeCard(b.dataset.rating);
+    });
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+//  SPANISH → PHONETIC GENERATOR
+// ════════════════════════════════════════════════════════════
+//
+// Best-effort: handles common LATAM Spanish. Output is editable.
+// Vowels mapped: a→ah e→eh i→ee o→oh u→oo
+// ll→y, ñ→ny, h silent, j/g-before-e/i→h, c/z→s in LATAM,
+// qu→k, gue/gui→g (silent u), rr→rr, ch→ch
+// Stress: accent mark > default rule (penult if ends vowel/n/s, else last)
+
+function spanishToPhonetic(text) {
+  if (!text) return '';
+  return text.split(/(\s+|[—–\-—…])/).map((part) => {
+    if (/^[\s—–…]*$/.test(part)) return part;
+    return part.replace(/[\w'áéíóúñüÁÉÍÓÚÑÜ]+/giu, (word) => phoneticWord(word.toLowerCase()));
+  }).join('');
+}
+
+function phoneticWord(word) {
+  if (!word || !/[a-záéíóúñü]/i.test(word)) return word;
+
+  // Step 1: tokenize into context-aware sound units
+  const units = [];
+  let i = 0;
+  while (i < word.length) {
+    const ch = word[i];
+    const next = word[i + 1] || '';
+    const next2 = word[i + 2] || '';
+
+    // Digraphs
+    if (ch === 'c' && next === 'h') { units.push({ s: 'ch', v: false }); i += 2; continue; }
+    if (ch === 'l' && next === 'l') { units.push({ s: 'y',  v: false }); i += 2; continue; }
+    if (ch === 'r' && next === 'r') { units.push({ s: 'rr', v: false }); i += 2; continue; }
+    if (ch === 'q' && next === 'u') { units.push({ s: 'k',  v: false }); i += 2; continue; }
+    if (ch === 'g' && next === 'u' && /[eiéí]/.test(next2)) {
+      units.push({ s: 'g', v: false }); i += 2; continue;
+    }
+
+    // Context-sensitive c, g, x
+    if (ch === 'c' && /[eiéí]/.test(next)) { units.push({ s: 's', v: false }); i += 1; continue; }
+    if (ch === 'g' && /[eiéí]/.test(next)) { units.push({ s: 'h', v: false }); i += 1; continue; }
+
+    // Word-initial r is rolled (rr)
+    if (ch === 'r' && i === 0) { units.push({ s: 'rr', v: false }); i += 1; continue; }
+
+    // Vowels
+    const vowelMap = { a: 'ah', e: 'eh', i: 'ee', o: 'oh', u: 'oo', á: 'ah', é: 'eh', í: 'ee', ó: 'oh', ú: 'oo', ü: 'oo' };
+    if (vowelMap[ch] !== undefined) {
+      units.push({ s: vowelMap[ch], v: true, accent: /[áéíóú]/.test(ch), letter: ch });
+      i += 1; continue;
+    }
+
+    // Single consonants
+    const consMap = {
+      b: 'b', c: 'k', d: 'd', f: 'f', g: 'g', h: '',
+      j: 'h', k: 'k', l: 'l', m: 'm', n: 'n', ñ: 'ny',
+      p: 'p', q: 'k', r: 'r', s: 's', t: 't', v: 'v',
+      w: 'w', x: 'ks', y: 'y', z: 's',
+    };
+    if (consMap[ch] !== undefined) {
+      units.push({ s: consMap[ch], v: false });
+      i += 1; continue;
+    }
+
+    units.push({ s: ch, v: false });
+    i += 1;
+  }
+
+  // Step 2: collect vowel positions
+  const vowelIdxs = units.map((u, idx) => (u.v ? idx : -1)).filter((x) => x >= 0);
+  if (vowelIdxs.length === 0) return units.map((u) => u.s).join('');
+
+  // Step 3: build nuclei (group adjacent vowels into diphthongs/triphthongs)
+  const INSEPARABLE = new Set(['bl','br','cl','cr','dr','fl','fr','gl','gr','pl','pr','tr']);
+  const isWeak = (u) => u && u.v && (u.letter === 'i' || u.letter === 'u' || u.letter === 'ü');
+  const isStrong = (u) => u && u.v && (u.letter === 'a' || u.letter === 'e' || u.letter === 'o');
+  const accentedWeak = (u) => u && u.v && u.accent && (u.letter === 'í' || u.letter === 'ú');
+  const formsDiphthong = (u1, u2) => {
+    if (!u1 || !u2 || !u1.v || !u2.v) return false;
+    if (accentedWeak(u1) || accentedWeak(u2)) return false;
+    if (isStrong(u1) && isStrong(u2)) return false; // hiatus
+    return true; // at least one weak (unaccented) → diphthong
+  };
+
+  const nuclei = []; // each: { startVi, endVi }
+  let vp = 0;
+  while (vp < vowelIdxs.length) {
+    const startVi = vowelIdxs[vp];
+    let endVi = startVi;
+    while (vp + 1 < vowelIdxs.length && vowelIdxs[vp + 1] === endVi + 1) {
+      if (formsDiphthong(units[endVi], units[endVi + 1])) {
+        endVi = endVi + 1;
+        vp++;
+      } else {
+        break;
+      }
+    }
+    nuclei.push({ startVi, endVi });
+    vp++;
+  }
+
+  // Step 4: find stressed nucleus
+  // First check for an accent mark in any nucleus
+  let stressNuc = -1;
+  for (let n = 0; n < nuclei.length; n++) {
+    for (let u = nuclei[n].startVi; u <= nuclei[n].endVi; u++) {
+      if (units[u].accent) { stressNuc = n; break; }
+    }
+    if (stressNuc >= 0) break;
+  }
+  if (stressNuc === -1) {
+    // Default rule based on word ending
+    const lastLetter = word[word.length - 1];
+    const endsVowelNS = /[aeiouáéíóúns]/i.test(lastLetter);
+    if (endsVowelNS && nuclei.length >= 2) {
+      stressNuc = nuclei.length - 2;
+    } else {
+      stressNuc = nuclei.length - 1;
+    }
+  }
+
+  // Step 5: build syllables based on consonants between nuclei
+  const syllables = [];
+  let start = 0;
+  for (let n = 0; n < nuclei.length; n++) {
+    const nuc = nuclei[n];
+    let end;
+    if (n === nuclei.length - 1) {
+      end = units.length;
+    } else {
+      const nextNucStart = nuclei[n + 1].startVi;
+      const between = nextNucStart - nuc.endVi - 1;
+      if (between === 0) end = nuc.endVi + 1;
+      else if (between === 1) end = nuc.endVi + 1;
+      else if (between === 2) {
+        const c1 = units[nuc.endVi + 1].s;
+        const c2 = units[nuc.endVi + 2].s;
+        const cluster = c1 + c2;
+        if (INSEPARABLE.has(cluster) || c1 === 'y' || c1 === 'rr' || c1 === 'ch') {
+          end = nuc.endVi + 1;
+        } else {
+          end = nuc.endVi + 2;
+        }
+      } else {
+        end = nuc.endVi + 2;
+      }
+    }
+    syllables.push({ start, end, hasStress: n === stressNuc });
+    start = end;
+  }
+
+  // Step 4: render syllables, apply diphthong glides, uppercase stressed
+  return syllables.map((syl) => {
+    let text = units.slice(syl.start, syl.end).map((u) => u.s).join('');
+    text = applyDiphthongGlides(text);
+    return syl.hasStress ? text.toUpperCase() : text;
+  }).join('-');
+}
+
+// Smooth out diphthongs into natural semivowel glides
+// (ue → weh, ie → yeh, ua → wah, ai → ai, au → ow, etc.)
+function applyDiphthongGlides(s) {
+  return s
+    // u-glides (oo + vowel → w-vowel)
+    .replace(/ooeh/g, 'weh')
+    .replace(/ooah/g, 'wah')
+    .replace(/oooh/g, 'woh')
+    .replace(/ooee/g, 'wee')
+    // i-glides (ee + vowel → y-vowel)
+    .replace(/eeeh/g, 'yeh')
+    .replace(/eeah/g, 'yah')
+    .replace(/eeoh/g, 'yoh')
+    .replace(/eeoo/g, 'yoo')
+    // falling diphthongs (vowel + i/u)
+    .replace(/ahee/g, 'ai')
+    .replace(/ehee/g, 'ay')
+    .replace(/ohee/g, 'oy')
+    .replace(/ahoo/g, 'ow')
+    .replace(/ehoo/g, 'ehoo'); // keep — uncommon but readable
+}
+
+// ════════════════════════════════════════════════════════════
+//  CUSTOM PHRASE — Add form with voice input + auto-phonetic
+// ════════════════════════════════════════════════════════════
+
+function loadCustomPhrasesIntoData() {
+  if (!DATA.custom || !DATA.custom.sections[0]) return;
+  DATA.custom.sections[0].phrases = state.customPhrases.map((p) => ({
+    en: p.en, es: p.es, ph: p.ph, note: p.note,
+  }));
+}
+
+function openAddForm() {
+  el('add-en').value = '';
+  el('add-es').value = '';
+  el('add-ph').value = '';
+  el('add-note').value = '';
+  el('add-preview').style.display = 'none';
+  setTimeout(() => el('add-en').focus(), 100);
+}
+
+let recognition = null;
+function startDictation(targetInputId, lang) {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    alert('Voice input is not supported on this browser. Type the phrase instead.');
+    return;
+  }
+  const input = el(targetInputId);
+  const btn = targetInputId === 'add-en' ? el('add-mic-en') : el('add-mic-es');
+  if (recognition) { try { recognition.stop(); } catch {} }
+  recognition = new SR();
+  recognition.lang = lang;
+  recognition.continuous = false;
+  recognition.interimResults = false;
+  btn.classList.add('recording');
+  recognition.onresult = (e) => {
+    const text = e.results[0][0].transcript;
+    input.value = text;
+    if (targetInputId === 'add-es') updateAutoPhonetic();
+    updatePreview();
+  };
+  recognition.onerror = () => btn.classList.remove('recording');
+  recognition.onend = () => btn.classList.remove('recording');
+  try { recognition.start(); } catch {}
+}
+
+function updateAutoPhonetic() {
+  const es = el('add-es').value.trim();
+  if (!es) { el('add-ph').value = ''; return; }
+  el('add-ph').value = spanishToPhonetic(es);
+}
+
+function updatePreview() {
+  const en = el('add-en').value.trim();
+  const es = el('add-es').value.trim();
+  const ph = el('add-ph').value.trim();
+  if (!en && !es) { el('add-preview').style.display = 'none'; return; }
+  el('prev-en').textContent = en || '(no English)';
+  el('prev-es').textContent = es || '(no Spanish)';
+  el('prev-ph').textContent = ph || '(no phonetic)';
+  el('add-preview').style.display = '';
+}
+
+function saveCustomPhrase() {
+  const en = el('add-en').value.trim();
+  const es = el('add-es').value.trim();
+  const ph = el('add-ph').value.trim();
+  const note = el('add-note').value.trim();
+  if (!en || !es) {
+    alert('Please fill in both English and Spanish.');
+    return;
+  }
+  state.customPhrases.push({
+    en, es, ph: ph || spanishToPhonetic(es), note: note || undefined, createdAt: Date.now(),
+  });
+  saveState();
+  loadCustomPhrasesIntoData();
+  alert('Saved! Find it under "My Phrases" on the Home screen.');
+  setTab('home');
+}
+
+function bindAddForm() {
+  el('add-exit').addEventListener('click', () => setTab('home'));
+  el('add-cancel').addEventListener('click', () => setTab('home'));
+  el('add-save').addEventListener('click', saveCustomPhrase);
+
+  el('add-en').addEventListener('input', updatePreview);
+  el('add-es').addEventListener('input', () => { updateAutoPhonetic(); updatePreview(); });
+  el('add-ph').addEventListener('input', updatePreview);
+
+  el('add-mic-en').addEventListener('click', () => startDictation('add-en', 'en-US'));
+  el('add-mic-es').addEventListener('click', () => startDictation('add-es', 'es-MX'));
+  el('add-regen').addEventListener('click', () => { updateAutoPhonetic(); updatePreview(); });
+
+  el('prev-play').addEventListener('click', () => {
+    const es = el('add-es').value.trim();
+    if (es) speak(es, { btn: el('prev-play') });
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+//  SPEECH RECOGNITION — shared manager (handles iOS quirks)
+// ════════════════════════════════════════════════════════════
+//
+// iOS Safari requires SR to be triggered by user gesture and
+// times out the session after ~60s. We auto-restart in continuous
+// modes (Eavesdrop) when the session ends.
+
+function createRecognition(lang, opts = {}) {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return null;
+  const rec = new SR();
+  rec.lang = lang;
+  rec.continuous = !!opts.continuous;
+  rec.interimResults = !!opts.interim;
+  rec.maxAlternatives = 1;
+  return rec;
+}
+
+function srSupported() {
+  return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+
+// ════════════════════════════════════════════════════════════
+//  FEATURE 1 — PRONUNCIATION COACH
+// ════════════════════════════════════════════════════════════
+
+let coachPhrase = null;
+let coachRec = null;
+
+function openCoach(phrase) {
+  coachPhrase = phrase;
+  el('coach-target-es').textContent = phrase.es;
+  el('coach-target-ph').textContent = phrase.ph;
+  el('coach-status').textContent = 'Ready when you are.';
+  el('coach-result').style.display = 'none';
+  el('coach-sheet').classList.add('open');
+  el('coach-backdrop').classList.add('open');
+}
+
+function closeCoach() {
+  if (coachRec) { try { coachRec.stop(); } catch {} coachRec = null; }
+  el('coach-mic').classList.remove('listening');
+  el('coach-sheet').classList.remove('open');
+  el('coach-backdrop').classList.remove('open');
+}
+
+function startCoach() {
+  if (!srSupported()) {
+    el('coach-status').textContent = 'Voice input not supported on this browser. Update Chrome or use Safari 14.5+.';
+    return;
+  }
+  if (coachRec) { try { coachRec.stop(); } catch {} }
+  coachRec = createRecognition('es-MX', { continuous: false });
+  el('coach-mic').classList.add('listening');
+  el('coach-status').textContent = 'Listening… say it now.';
+  coachRec.onresult = (e) => {
+    const heard = (e.results[0] && e.results[0][0] && e.results[0][0].transcript) || '';
+    gradeCoach(heard);
+  };
+  coachRec.onerror = (e) => {
+    el('coach-mic').classList.remove('listening');
+    el('coach-status').textContent = 'No audio detected. Try again.';
+  };
+  coachRec.onend = () => {
+    el('coach-mic').classList.remove('listening');
+  };
+  try { coachRec.start(); } catch (e) {
+    el('coach-status').textContent = 'Could not start microphone. Check permissions.';
+  }
+}
+
+function normaliseForCompare(s) {
+  return s.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // strip accents
+    .replace(/[¿¡!?,.;:"']/g, '')
+    .replace(/\s+/g, ' ').trim();
+}
+
+function gradeCoach(heard) {
+  const target = coachPhrase.es;
+  const tNorm = normaliseForCompare(target);
+  const hNorm = normaliseForCompare(heard);
+
+  // Word-level similarity using Levenshtein
+  const tWords = tNorm.split(' ');
+  const hWords = hNorm.split(' ');
+  let score;
+  if (!hNorm) {
+    score = 0;
+  } else {
+    const dist = levenshtein(tNorm, hNorm);
+    const maxLen = Math.max(tNorm.length, hNorm.length);
+    score = Math.max(0, Math.round(100 * (1 - dist / maxLen)));
+  }
+
+  // Visual word diff
+  const diffHtml = renderWordDiff(tWords, hWords);
+
+  // Render
+  el('coach-result').style.display = '';
+  const scoreEl = el('coach-score');
+  scoreEl.textContent = score;
+  scoreEl.className = 'coach-score-num ' + (score >= 85 ? 's-great' : score >= 60 ? 's-ok' : 's-poor');
+  el('coach-grade').textContent =
+    score >= 95 ? 'Spot on!' :
+    score >= 85 ? 'Excellent' :
+    score >= 70 ? 'Good — close' :
+    score >= 50 ? 'Getting there' :
+                  'Try again';
+  el('coach-diff-target').innerHTML = tWords.map((w) => `<span class="ok">${w}</span>`).join(' ');
+  el('coach-diff-got').innerHTML = diffHtml;
+
+  let feedback;
+  if (!hNorm) feedback = "Didn't catch anything. Speak a bit louder and closer to the mic.";
+  else if (score >= 95) feedback = 'Perfect pronunciation. The speech engine recognised every word.';
+  else if (score >= 85) feedback = 'Great — very close to native. One or two small word differences.';
+  else if (score >= 60) feedback = 'On the right track. Listen to the target again and notice the stressed syllables.';
+  else feedback = 'The speech engine heard something different from the target. Try slower and more deliberate.';
+  el('coach-feedback').textContent = feedback;
+  el('coach-status').textContent = 'Tap "Try again" to retry.';
+}
+
+function levenshtein(a, b) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const v0 = new Array(b.length + 1);
+  const v1 = new Array(b.length + 1);
+  for (let i = 0; i <= b.length; i++) v0[i] = i;
+  for (let i = 0; i < a.length; i++) {
+    v1[0] = i + 1;
+    for (let j = 0; j < b.length; j++) {
+      const cost = a[i] === b[j] ? 0 : 1;
+      v1[j + 1] = Math.min(v1[j] + 1, v0[j + 1] + 1, v0[j] + cost);
+    }
+    for (let j = 0; j <= b.length; j++) v0[j] = v1[j];
+  }
+  return v1[b.length];
+}
+
+function renderWordDiff(targetWords, gotWords) {
+  // Mark each got-word as ok (in target) or miss (not in target)
+  // and append any target words missing from got as "miss"
+  const tSet = new Set(targetWords);
+  const gSet = new Set(gotWords);
+  const gotHtml = gotWords.map((w) => {
+    const klass = tSet.has(w) ? 'ok' : 'miss';
+    return `<span class="${klass}">${w}</span>`;
+  }).join(' ');
+  const missing = targetWords.filter((w) => !gSet.has(w));
+  const missingHtml = missing.length ? ' ' + missing.map((w) => `<span class="add">+${w}</span>`).join(' ') : '';
+  return gotHtml + missingHtml;
+}
+
+function bindCoach() {
+  el('coach-close').addEventListener('click', closeCoach);
+  el('coach-backdrop').addEventListener('click', closeCoach);
+  el('coach-hear').addEventListener('click', () => {
+    if (coachPhrase) speak(coachPhrase.es, { btn: el('coach-hear') });
+  });
+  el('coach-mic').addEventListener('click', startCoach);
+  el('coach-retry').addEventListener('click', () => {
+    el('coach-result').style.display = 'none';
+    startCoach();
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+//  LIVE TAB — sub-mode switcher
+// ════════════════════════════════════════════════════════════
+
+let currentLiveMode = 'eavesdrop';
+
+function openLiveMode(mode) {
+  currentLiveMode = mode;
+  document.querySelectorAll('.live-tab').forEach((t) => {
+    t.classList.toggle('active', t.dataset.mode === mode);
+  });
+  ['eavesdrop', 'mirror', 'stuck'].forEach((m) => {
+    const node = el('mode-' + m);
+    if (node) node.style.display = m === mode ? '' : 'none';
+  });
+  // Stop other modes when switching
+  if (mode !== 'eavesdrop') stopEavesdrop();
+}
+
+function bindLiveTabs() {
+  document.querySelectorAll('.live-tab').forEach((t) => {
+    t.addEventListener('click', () => openLiveMode(t.dataset.mode));
+  });
+  el('live-exit').addEventListener('click', () => { stopEavesdrop(); setTab('home'); });
+}
+
+// ════════════════════════════════════════════════════════════
+//  FEATURE 2 — EAVESDROP MODE (live captions)
+// ════════════════════════════════════════════════════════════
+
+let eavesdropRec = null;
+let eavesdropActive = false;
+let eavesdropLines = [];
+
+function startEavesdrop() {
+  if (!srSupported()) {
+    el('eavesdrop-status').textContent = 'Voice input not supported on this browser.';
+    return;
+  }
+  eavesdropActive = true;
+  el('eavesdrop-status').textContent = 'Listening… speak Spanish near the phone.';
+  el('eavesdrop-toggle').classList.add('listening');
+  el('eavesdrop-toggle').querySelector('.lbb-icon').textContent = '⏸';
+  el('eavesdrop-toggle').querySelector('.lbb-lbl').textContent = 'Stop listening';
+  spinUpEavesdropRec();
+}
+
+function spinUpEavesdropRec() {
+  if (!eavesdropActive) return;
+  eavesdropRec = createRecognition('es-MX', { continuous: true, interim: true });
+  if (!eavesdropRec) return;
+  let interimLine = null;
+
+  eavesdropRec.onresult = (e) => {
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const r = e.results[i];
+      const text = r[0].transcript.trim();
+      if (!text) continue;
+      if (r.isFinal) {
+        addEavesdropLine(text, false);
+        interimLine = null;
+      } else {
+        if (!interimLine) {
+          interimLine = document.createElement('div');
+          interimLine.className = 'eavesdrop-line interim';
+          el('eavesdrop-log').appendChild(interimLine);
+        }
+        interimLine.innerHTML = `
+          <div class="eavesdrop-line-es">${escapeHtml(text)}…</div>
+        `;
+        el('eavesdrop-log').scrollTop = el('eavesdrop-log').scrollHeight;
+      }
+    }
+  };
+  eavesdropRec.onerror = (e) => {
+    if (e.error === 'no-speech' || e.error === 'audio-capture' || e.error === 'aborted') {
+      // benign — auto-restart
+    } else {
+      console.warn('Eavesdrop SR error:', e.error);
+    }
+  };
+  eavesdropRec.onend = () => {
+    // Auto-restart if still active (iOS will end sessions ~60s)
+    if (eavesdropActive) {
+      setTimeout(() => spinUpEavesdropRec(), 250);
+    }
+  };
+  try { eavesdropRec.start(); }
+  catch (err) {
+    // If already started, ignore; otherwise alert
+    setTimeout(() => spinUpEavesdropRec(), 500);
+  }
+}
+
+function stopEavesdrop() {
+  eavesdropActive = false;
+  if (eavesdropRec) { try { eavesdropRec.stop(); } catch {} eavesdropRec = null; }
+  const toggle = el('eavesdrop-toggle');
+  if (toggle) {
+    toggle.classList.remove('listening');
+    toggle.querySelector('.lbb-icon').textContent = '▶';
+    toggle.querySelector('.lbb-lbl').textContent = 'Start listening';
+  }
+  const status = el('eavesdrop-status');
+  if (status) status.textContent = 'Stopped.';
+  // Remove interim lines
+  document.querySelectorAll('.eavesdrop-line.interim').forEach((n) => n.remove());
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function addEavesdropLine(text, saved) {
+  // Hide empty placeholder
+  const empty = el('eavesdrop-log').querySelector('.eavesdrop-empty');
+  if (empty) empty.remove();
+  // Remove interim
+  document.querySelectorAll('.eavesdrop-line.interim').forEach((n) => n.remove());
+
+  const ph = spanishToPhonetic(text);
+  const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const lineId = 'ed-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+  const lineEl = document.createElement('div');
+  lineEl.className = 'eavesdrop-line' + (saved ? ' saved' : '');
+  lineEl.id = lineId;
+  lineEl.innerHTML = `
+    <div class="eavesdrop-line-es">${escapeHtml(text)}</div>
+    <div class="eavesdrop-line-ph">${escapeHtml(ph)}</div>
+    <div class="eavesdrop-line-time">
+      <span>${timestamp}</span>
+      <div class="eavesdrop-line-actions">
+        <button data-action="play">Hear</button>
+        <button data-action="translate">Translate</button>
+        <button data-action="save">Save</button>
+      </div>
+    </div>
+  `;
+  lineEl.querySelector('[data-action="play"]').addEventListener('click', (e) => {
+    e.stopPropagation();
+    speak(text);
+  });
+  lineEl.querySelector('[data-action="translate"]').addEventListener('click', (e) => {
+    e.stopPropagation();
+    window.open('https://translate.google.com/?sl=es&tl=en&text=' + encodeURIComponent(text), '_blank');
+  });
+  lineEl.querySelector('[data-action="save"]').addEventListener('click', (e) => {
+    e.stopPropagation();
+    state.customPhrases.push({
+      en: '(saved from Eavesdrop — translate to add English)',
+      es: text, ph, note: 'Heard at ' + timestamp, createdAt: Date.now(),
+    });
+    saveState();
+    loadCustomPhrasesIntoData();
+    lineEl.classList.add('saved');
+    e.currentTarget.textContent = 'Saved';
+    e.currentTarget.classList.add('saved');
+  });
+  el('eavesdrop-log').appendChild(lineEl);
+  el('eavesdrop-log').scrollTop = el('eavesdrop-log').scrollHeight;
+  eavesdropLines.push({ text, ph, timestamp });
+}
+
+function bindEavesdrop() {
+  el('eavesdrop-toggle').addEventListener('click', () => {
+    if (eavesdropActive) stopEavesdrop(); else startEavesdrop();
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+//  FEATURE 3 — MIRROR MODE
+// ════════════════════════════════════════════════════════════
+
+let mirrorRec = null;
+let mirrorLastText = '';
+
+function startMirror() {
+  if (!srSupported()) {
+    el('mirror-status').textContent = 'Voice input not supported on this browser.';
+    return;
+  }
+  if (mirrorRec) { try { mirrorRec.stop(); } catch {} }
+  mirrorRec = createRecognition('es-MX', { continuous: false });
+  const btn = el('mirror-start');
+  btn.classList.add('listening');
+  btn.querySelector('.lbb-icon').textContent = '⏺️';
+  btn.querySelector('.lbb-lbl').textContent = 'Listening… speak now';
+  el('mirror-status').textContent = 'Speak Spanish freely…';
+  el('mirror-result').style.display = 'none';
+
+  mirrorRec.onresult = (e) => {
+    const text = e.results[0][0].transcript;
+    mirrorLastText = text;
+    el('mirror-es').textContent = text;
+    el('mirror-ph').textContent = spanishToPhonetic(text);
+    el('mirror-translate').href = 'https://translate.google.com/?sl=es&tl=en&text=' + encodeURIComponent(text);
+    el('mirror-result').style.display = '';
+    el('mirror-status').textContent = 'Got it. Read what you actually said.';
+  };
+  mirrorRec.onerror = () => {
+    el('mirror-status').textContent = 'No speech detected. Try again.';
+    stopMirrorBtn();
+  };
+  mirrorRec.onend = () => stopMirrorBtn();
+  try { mirrorRec.start(); }
+  catch { el('mirror-status').textContent = 'Could not start microphone.'; stopMirrorBtn(); }
+}
+
+function stopMirrorBtn() {
+  const btn = el('mirror-start');
+  btn.classList.remove('listening');
+  btn.querySelector('.lbb-icon').innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
+  btn.querySelector('.lbb-lbl').textContent = 'Tap and speak';
+}
+
+function bindMirror() {
+  el('mirror-start').addEventListener('click', startMirror);
+  el('mirror-play').addEventListener('click', () => {
+    if (mirrorLastText) speak(mirrorLastText, { btn: el('mirror-play') });
+  });
+  el('mirror-save').addEventListener('click', () => {
+    if (!mirrorLastText) return;
+    const ph = spanishToPhonetic(mirrorLastText);
+    state.customPhrases.push({
+      en: '(from Mirror — what I said)', es: mirrorLastText, ph,
+      note: 'Mirror Mode capture · ' + new Date().toLocaleString(),
+      createdAt: Date.now(),
+    });
+    saveState();
+    loadCustomPhrasesIntoData();
+    el('mirror-status').textContent = 'Saved to My Phrases.';
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+//  FEATURE 4 — FAMILY VOICE BANK (IndexedDB blob storage)
+// ════════════════════════════════════════════════════════════
+
+let db = null;
+let voiceBankIndex = {}; // phraseId -> { speaker, blobKey }
+let vbPhrase = null;
+let vbSpeaker = 'stephania';
+let vbMediaRecorder = null;
+let vbChunks = [];
+let vbBlobUrl = null;
+
+function openVoiceBankDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('cotidiano-voices', 1);
+    req.onupgradeneeded = (e) => {
+      const dbb = e.target.result;
+      if (!dbb.objectStoreNames.contains('voices')) {
+        dbb.createObjectStore('voices', { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = (e) => { db = e.target.result; resolve(db); };
+    req.onerror = (e) => reject(e);
+  });
+}
+
+async function loadVoiceBankIndex() {
+  if (!db) await openVoiceBankDB().catch(() => {});
+  if (!db) return;
+  return new Promise((resolve) => {
+    const tx = db.transaction('voices', 'readonly');
+    const store = tx.objectStore('voices');
+    const req = store.getAll();
+    req.onsuccess = () => {
+      voiceBankIndex = {};
+      (req.result || []).forEach((rec) => {
+        voiceBankIndex[rec.id] = { speaker: rec.speaker, hasBlob: !!rec.blob };
+      });
+      resolve();
+    };
+    req.onerror = () => resolve();
+  });
+}
+
+function saveVoiceBlob(phraseId, speaker, blob) {
+  return new Promise((resolve, reject) => {
+    if (!db) return reject('no-db');
+    const tx = db.transaction('voices', 'readwrite');
+    const store = tx.objectStore('voices');
+    store.put({ id: phraseId, speaker, blob, savedAt: Date.now() });
+    tx.oncomplete = () => resolve();
+    tx.onerror = (e) => reject(e);
+  });
+}
+
+function loadVoiceBlob(phraseId) {
+  return new Promise((resolve) => {
+    if (!db) return resolve(null);
+    const tx = db.transaction('voices', 'readonly');
+    const store = tx.objectStore('voices');
+    const req = store.get(phraseId);
+    req.onsuccess = () => resolve(req.result ? req.result.blob : null);
+    req.onerror = () => resolve(null);
+  });
+}
+
+async function playFamilyVoice(phraseId, btn) {
+  const blob = await loadVoiceBlob(phraseId);
+  if (!blob) return;
+  if (btn) btn.classList.add('playing');
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
+  audio.onended = audio.onerror = () => {
+    if (btn) btn.classList.remove('playing');
+    URL.revokeObjectURL(url);
+  };
+  audio.play();
+}
+
+function openVoiceBank(phrase) {
+  vbPhrase = phrase;
+  el('vb-target-es').textContent = phrase.es;
+  el('vb-target-ph').textContent = phrase.ph;
+  el('vb-status').textContent = 'Press and hold the button, say the phrase, release.';
+  el('vb-playback').style.display = 'none';
+  vbBlobUrl = null;
+  el('vb-sheet').classList.add('open');
+  el('vb-backdrop').classList.add('open');
+}
+
+function closeVoiceBank() {
+  if (vbMediaRecorder && vbMediaRecorder.state !== 'inactive') {
+    try { vbMediaRecorder.stop(); } catch {}
+  }
+  if (vbBlobUrl) { URL.revokeObjectURL(vbBlobUrl); vbBlobUrl = null; }
+  el('vb-sheet').classList.remove('open');
+  el('vb-backdrop').classList.remove('open');
+}
+
+async function startVoiceRecord() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    el('vb-status').textContent = 'Recording not supported on this browser.';
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    vbChunks = [];
+    vbMediaRecorder = new MediaRecorder(stream);
+    vbMediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) vbChunks.push(e.data); };
+    vbMediaRecorder.onstop = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      const blob = new Blob(vbChunks, { type: 'audio/webm' });
+      if (vbBlobUrl) URL.revokeObjectURL(vbBlobUrl);
+      vbBlobUrl = URL.createObjectURL(blob);
+      el('vb-audio').src = vbBlobUrl;
+      el('vb-playback').style.display = '';
+      el('vb-status').textContent = 'Listen back, then save.';
+      el('vb-rec').classList.remove('recording');
+      el('vb-rec').dataset.blob = '1';
+      el('vb-rec').querySelector('.lbb-lbl').textContent = 'Hold to record';
+    };
+    vbMediaRecorder.start();
+    el('vb-rec').classList.add('recording');
+    el('vb-rec').querySelector('.lbb-lbl').textContent = 'Recording…';
+    el('vb-status').textContent = 'Recording — speak the phrase now.';
+  } catch (err) {
+    el('vb-status').textContent = 'Microphone permission denied or unavailable.';
+  }
+}
+
+function stopVoiceRecord() {
+  if (vbMediaRecorder && vbMediaRecorder.state === 'recording') {
+    vbMediaRecorder.stop();
+  }
+}
+
+async function commitVoice() {
+  if (!vbPhrase || !vbChunks.length) return;
+  const blob = new Blob(vbChunks, { type: 'audio/webm' });
+  const id = phraseId(vbPhrase);
+  try {
+    if (!db) await openVoiceBankDB();
+    await saveVoiceBlob(id, vbSpeaker, blob);
+    voiceBankIndex[id] = { speaker: vbSpeaker, hasBlob: true };
+    el('vb-status').textContent = 'Saved. ' + vbSpeaker + "'s voice is now linked to this phrase.";
+    // Re-render any visible phrase cards
+    setTimeout(() => {
+      closeVoiceBank();
+      // Refresh current view
+      const activeTab = document.querySelector('.nav-item.active')?.dataset.tab || 'home';
+      setTab(activeTab);
+    }, 800);
+  } catch (e) {
+    el('vb-status').textContent = 'Save failed: ' + e;
+  }
+}
+
+function bindVoiceBank() {
+  el('vb-close').addEventListener('click', closeVoiceBank);
+  el('vb-backdrop').addEventListener('click', closeVoiceBank);
+
+  document.querySelectorAll('.vb-speaker').forEach((b) => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('.vb-speaker').forEach((x) => x.classList.remove('active'));
+      b.classList.add('active');
+      vbSpeaker = b.dataset.speaker;
+    });
+  });
+
+  const rec = el('vb-rec');
+  // Press-and-hold (touch + mouse)
+  let holdActive = false;
+  const start = (e) => { e.preventDefault(); if (holdActive) return; holdActive = true; startVoiceRecord(); };
+  const end = () => { if (!holdActive) return; holdActive = false; stopVoiceRecord(); };
+  rec.addEventListener('mousedown', start);
+  rec.addEventListener('mouseup', end);
+  rec.addEventListener('mouseleave', end);
+  rec.addEventListener('touchstart', start, { passive: false });
+  rec.addEventListener('touchend', end);
+  rec.addEventListener('touchcancel', end);
+
+  el('vb-redo').addEventListener('click', () => {
+    el('vb-playback').style.display = 'none';
+    vbChunks = [];
+  });
+  el('vb-save').addEventListener('click', commitVoice);
+}
+
+// ════════════════════════════════════════════════════════════
+//  FEATURE 5 — STUCK MODE (English in → Spanish out)
+// ════════════════════════════════════════════════════════════
+
+let stuckRec = null;
+let stuckLastAnswer = null;
+
+function startStuck() {
+  if (!srSupported()) {
+    el('stuck-status').textContent = 'Voice input not supported on this browser.';
+    return;
+  }
+  if (stuckRec) { try { stuckRec.stop(); } catch {} }
+  stuckRec = createRecognition('en-US', { continuous: false });
+  el('stuck-btn').classList.add('recording');
+  el('stuck-lbl').textContent = 'Listening…';
+  el('stuck-status').textContent = 'Listening — describe in English.';
+  el('stuck-result').style.display = 'none';
+
+  stuckRec.onresult = (e) => {
+    const heard = e.results[0][0].transcript;
+    answerStuck(heard);
+  };
+  stuckRec.onerror = () => stopStuckBtn();
+  stuckRec.onend = () => stopStuckBtn();
+  try { stuckRec.start(); }
+  catch { el('stuck-status').textContent = 'Could not start microphone.'; stopStuckBtn(); }
+}
+
+function stopStuckBtn() {
+  el('stuck-btn').classList.remove('recording');
+  el('stuck-lbl').textContent = 'Hold to ask';
+}
+
+function answerStuck(heard) {
+  el('stuck-q').textContent = '"' + heard + '"';
+  // Lookup against the entire phrase database
+  const all = allPhrases();
+  const heardNorm = heard.toLowerCase();
+  const heardWords = heardNorm.split(/\W+/).filter(Boolean);
+
+  // Score each phrase by overlap of words in its English text
+  let best = null; let bestScore = 0;
+  for (const p of all) {
+    const enNorm = p.en.toLowerCase();
+    let score = 0;
+    for (const w of heardWords) {
+      if (w.length >= 3 && enNorm.includes(w)) score += 1;
+      if (w.length >= 4 && enNorm.split(/\W+/).includes(w)) score += 1;
+    }
+    // Substring boost
+    if (enNorm.includes(heardNorm)) score += 5;
+    if (heardNorm.includes(enNorm) && enNorm.length > 5) score += 3;
+    if (score > bestScore) { bestScore = score; best = p; }
+  }
+
+  if (!best || bestScore === 0) {
+    el('stuck-a').textContent = '(no match)';
+    el('stuck-ph').textContent = '';
+    el('stuck-en').textContent = 'Try describing it differently. Example: "the thing you spread on bread"';
+    el('stuck-result').style.display = '';
+    el('stuck-status').textContent = 'No match. Try a different way of saying it.';
+    return;
+  }
+
+  stuckLastAnswer = best;
+  el('stuck-a').textContent = best.es;
+  el('stuck-ph').textContent = best.ph;
+  el('stuck-en').textContent = best.en;
+  el('stuck-result').style.display = '';
+  el('stuck-status').textContent = 'Speaking through your speaker now.';
+  // Speak the Spanish answer
+  speak(best.es, { btn: null });
+}
+
+function bindStuck() {
+  // Stuck big button — tap to start, mic auto-stops on silence
+  el('stuck-btn').addEventListener('click', startStuck);
+  el('stuck-repeat').addEventListener('click', () => {
+    if (stuckLastAnswer) speak(stuckLastAnswer.es, { btn: el('stuck-repeat') });
+  });
+  // FAB — opens Live tab into Stuck mode
+  el('stuck-fab').addEventListener('click', () => {
+    setTab('live');
+    setTimeout(() => openLiveMode('stuck'), 50);
+  });
+}
+
+// ── Boot ───────────────────────────────────────────────────
+async function boot() {
+  loadCustomPhrasesIntoData();
+  tickStreak();
+  bindSettings();
+  bindPractice();
+  bindAddForm();
+  bindCoach();
+  bindLiveTabs();
+  bindEavesdrop();
+  bindMirror();
+  bindVoiceBank();
+  bindStuck();
+  // Load voice bank index
+  try { await openVoiceBankDB(); await loadVoiceBankIndex(); } catch {}
+
+  // TTS voices
+  if ('speechSynthesis' in window) {
+    loadVoices();
+    speechSynthesis.onvoiceschanged = loadVoices;
+    // iOS Safari sometimes loads voices late — retry once
+    setTimeout(loadVoices, 500);
+  }
+
+  // Header buttons
+  el('btn-search').addEventListener('click', () => {
+    const row = el('search-row');
+    row.classList.toggle('hidden');
+    if (!row.classList.contains('hidden')) {
+      el('search-input').focus();
+    } else {
+      el('search-input').value = ''; showView('home');
+    }
+  });
+  el('search-input').addEventListener('input', (e) => {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => handleSearch(e.target.value), 150);
+  });
+  el('btn-settings').addEventListener('click', openSheet);
+  el('backdrop').addEventListener('click', closeSheet);
+  el('btn-direction').addEventListener('click', toggleDirection);
+  syncDirectionBtn();
+
+  // Back button
+  el('back-btn').addEventListener('click', () => {
+    const activeTab = document.querySelector('.nav-item.active').dataset.tab;
+    setTab(activeTab);
+  });
+
+  // Bottom nav
+  document.querySelectorAll('.nav-item').forEach((b) => {
+    b.addEventListener('click', () => setTab(b.dataset.tab));
+  });
+
+  renderHome();
+}
+
+document.addEventListener('DOMContentLoaded', boot);
